@@ -1,169 +1,227 @@
-// js/detail-nasabah.js
+// js/nasabah.js
 
 import { auth, db } from './firebase-config.js';
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { doc, getDoc, collection, addDoc, onSnapshot, query, where, serverTimestamp, writeBatch, Timestamp, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { collection, addDoc, onSnapshot, query, where, serverTimestamp, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Elemen DOM ---
 const logoutButton = document.getElementById('logout-button');
 const sidebar = document.getElementById('sidebar');
 const hamburgerButton = document.getElementById('hamburger-button');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
-const breadcrumbName = document.getElementById('breadcrumb-customer-name');
-const profileInfo = document.getElementById('customer-profile-info');
-const summaryTotalPinjaman = document.getElementById('summary-total-pinjaman');
-const summarySisaTagihan = document.getElementById('summary-sisa-tagihan');
-const transactionHistoryBody = document.getElementById('transaction-history-body');
+const customerTableBody = document.getElementById('customer-table-body');
 const userMenuButton = document.getElementById('user-menu-button');
 const userMenu = document.getElementById('user-menu');
 const userEmailDropdown = document.getElementById('user-email-dropdown');
 const logoutLinkDropdown = document.getElementById('logout-link-dropdown');
-const addLoanModal = document.getElementById('add-loan-modal');
-const addLoanBtn = document.getElementById('add-loan-btn');
-const addLoanForm = document.getElementById('add-loan-form');
-const addPaymentModal = document.getElementById('add-payment-modal');
-const addPaymentBtn = document.getElementById('add-payment-btn');
-const addPaymentForm = document.getElementById('add-payment-form');
-const paymentLoanSelect = document.getElementById('payment-loan-select');
-const loanAmountInput = document.getElementById('loan-amount');
-const paymentAmountInput = document.getElementById('payment-amount');
+const searchInput = document.getElementById('search-input');
 
-document.querySelectorAll('.btn-cancel-modal').forEach(btn => {
-    btn.addEventListener('click', () => {
-        addLoanModal.classList.add('hidden');
-        addPaymentModal.classList.add('hidden');
-    });
-});
+// --- Elemen Modal Tambah/Edit ---
+const customerModal = document.getElementById('customer-modal');
+const modalTitle = document.getElementById('modal-title');
+const addCustomerBtn = document.getElementById('add-customer-btn');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const cancelModalBtn = document.getElementById('cancel-modal-btn');
+const customerForm = document.getElementById('customer-form');
+
+// --- Elemen Modal Hapus ---
+const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+
+// --- State Management ---
+let editMode = false;
+let currentCustomerId = null;
+let customerIdToDelete = null;
+let allCustomersData = [];
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
-const formatDate = (timestamp) => timestamp ? timestamp.toDate().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
-const formatCurrencyInput = (inputElement) => {
-    inputElement.addEventListener('keyup', (e) => {
-        let value = e.target.value.replace(/[^,\d]/g, '').toString();
-        let number_string = value.replace(/[^,\d]/g, '').toString(),
-            split = number_string.split(','),
-            sisa = split[0].length % 3,
-            rupiah = split[0].substr(0, sisa),
-            ribuan = split[0].substr(sisa).match(/\d{3}/gi);
-        if (ribuan) {
-            let separator = sisa ? '.' : '';
-            rupiah += separator + ribuan.join('.');
-        }
-        rupiah = split[1] != undefined ? rupiah + ',' + split[1] : rupiah;
-        e.target.value = rupiah;
-    });
-};
-const parseCurrencyValue = (formattedValue) => {
-    if (!formattedValue) return 0;
-    return parseInt(formattedValue.replace(/\./g, ''), 10);
+
+// --- Logika Modal ---
+const openModalForAdd = () => {
+    editMode = false;
+    currentCustomerId = null;
+    modalTitle.textContent = 'Tambah Nasabah Baru';
+    customerForm.reset();
+    customerModal.classList.remove('hidden');
 };
 
-const getCustomerIdFromURL = () => new URLSearchParams(window.location.search).get('id');
-const customerId = getCustomerIdFromURL();
-
-addLoanBtn.addEventListener('click', () => addLoanModal.classList.remove('hidden'));
-addPaymentBtn.addEventListener('click', async () => {
-    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId), where('status', '==', 'Aktif'));
+const openModalForEdit = async (id) => {
+    editMode = true;
+    currentCustomerId = id;
+    modalTitle.textContent = 'Edit Data Nasabah';
     try {
-        const loanSnapshot = await getDocs(loansQuery);
-        paymentLoanSelect.innerHTML = '';
-        if (loanSnapshot.empty) { alert("Tidak ada pinjaman aktif yang bisa dibayar."); return; }
-        loanSnapshot.forEach(doc => {
-            const loan = doc.data();
-            const option = document.createElement('option');
-            option.value = doc.id;
-            option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
-            paymentLoanSelect.appendChild(option);
-        });
-        addPaymentModal.classList.remove('hidden');
-    } catch (error) { console.error("Error mengambil data pinjaman aktif:", error); alert("Gagal memuat data pinjaman."); }
-});
-
-const loadCustomerData = (id) => {
-    if (!id) { window.location.href = 'nasabah.html'; return; }
-    const customerRef = doc(db, 'customers', id);
-    getDoc(customerRef).then(docSnap => {
+        const customerRef = doc(db, 'customers', id);
+        const docSnap = await getDoc(customerRef);
         if (docSnap.exists()) {
-            const customer = docSnap.data();
-            breadcrumbName.textContent = customer.nama;
-            profileInfo.innerHTML = `<p><strong>Nama:</strong> ${customer.nama}</p><p><strong>Telepon:</strong> ${customer.telepon}</p><p><strong>Alamat:</strong> ${customer.alamat}</p>`;
-        } else { alert("Data nasabah tidak ditemukan."); }
-    });
-    const transactionsQuery = query(collection(db, 'transactions'), where('customerId', '==', id), orderBy('tanggalTransaksi', 'desc'));
-    onSnapshot(transactionsQuery, (snapshot) => {
-        transactionHistoryBody.innerHTML = snapshot.empty ? `<tr><td colspan="4" class="p-6 text-center text-gray-500">Belum ada riwayat transaksi.</td></tr>` : '';
-        snapshot.forEach(doc => {
-            const trx = doc.data();
-            const rowClass = trx.tipe === 'Pinjaman Baru' ? 'bg-red-50' : 'bg-green-50';
-            transactionHistoryBody.innerHTML += `<tr class="${rowClass}"><td class="px-6 py-4">${formatDate(trx.tanggalTransaksi)}</td><td class="px-6 py-4 font-medium">${trx.tipe}</td><td class="px-6 py-4">${formatRupiah(trx.jumlah)}</td><td class="px-6 py-4 text-sm text-gray-600">${trx.keterangan || '-'}</td></tr>`;
-        });
-    });
-    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', id));
-    onSnapshot(loansQuery, (snapshot) => {
-        let totalTagihan = 0, totalSisaTagihan = 0;
-        snapshot.forEach(doc => {
-            const loan = doc.data();
-            totalTagihan += loan.totalTagihan;
-            if(loan.status === 'Aktif') totalSisaTagihan += loan.sisaTagihan;
-        });
-        summaryTotalPinjaman.textContent = formatRupiah(totalTagihan);
-        summarySisaTagihan.textContent = formatRupiah(totalSisaTagihan);
+            const data = docSnap.data();
+            document.getElementById('customer-name').value = data.nama;
+            document.getElementById('customer-phone').value = data.telepon;
+            document.getElementById('customer-address').value = data.alamat;
+            customerModal.classList.remove('hidden');
+        }
+    } catch (error) { console.error("Gagal mengambil data untuk diedit:", error); }
+};
+
+const closeModal = () => {
+    customerModal.classList.add('hidden');
+    customerForm.reset();
+};
+
+addCustomerBtn.addEventListener('click', openModalForAdd);
+closeModalBtn.addEventListener('click', closeModal);
+cancelModalBtn.addEventListener('click', closeModal);
+
+const openDeleteModal = (id) => {
+    customerIdToDelete = id;
+    deleteConfirmModal.classList.remove('hidden');
+};
+const closeDeleteModal = () => {
+    customerIdToDelete = null;
+    deleteConfirmModal.classList.add('hidden');
+};
+cancelDeleteBtn.addEventListener('click', closeDeleteModal);
+confirmDeleteBtn.addEventListener('click', async () => {
+    if (!customerIdToDelete) return;
+    const deleteButton = confirmDeleteBtn;
+    deleteButton.disabled = true;
+    deleteButton.textContent = "Menghapus...";
+    try {
+        const customerRef = doc(db, 'customers', customerIdToDelete);
+        await updateDoc(customerRef, { status: 'Dihapus' });
+    } catch (error) {
+        console.error("Gagal menghapus nasabah:", error);
+        alert("Gagal menghapus nasabah.");
+    } finally {
+        deleteButton.disabled = false;
+        deleteButton.textContent = "Ya, Hapus";
+        closeDeleteModal();
+    }
+});
+
+customerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Menyimpan...';
+    const customerData = {
+        nama: document.getElementById('customer-name').value,
+        telepon: document.getElementById('customer-phone').value,
+        alamat: document.getElementById('customer-address').value,
+    };
+    try {
+        if (editMode) {
+            const customerRef = doc(db, 'customers', currentCustomerId);
+            await updateDoc(customerRef, customerData);
+        } else {
+            await addDoc(collection(db, 'customers'), { ...customerData, status: 'Aktif', dibuatPada: serverTimestamp() });
+        }
+        closeModal();
+    } catch (error) {
+        console.error("Error menyimpan data nasabah: ", error);
+        alert("Gagal menyimpan data.");
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Simpan';
+    }
+});
+
+// --- Memuat dan Menampilkan Daftar Nasabah ---
+const renderCustomerTable = (customersToRender) => {
+    if (customersToRender.length === 0) {
+        customerTableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Nasabah tidak ditemukan.</td></tr>`;
+        return;
+    }
+    customerTableBody.innerHTML = '';
+    customersToRender.forEach(customer => {
+        const row = `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <div class="font-semibold text-gray-900">${customer.nama}</div>
+                    <div class="text-sm text-gray-500">${customer.alamat}</div>
+                </td>
+                <td class="px-6 py-4 font-medium text-gray-800">${formatRupiah(customer.totalSisaTagihan)}</td>
+                <td class="px-6 py-4 text-gray-700">${customer.installmentText}</td>
+                <td class="px-6 py-4 text-sm space-x-2">
+                    <a href="detail-nasabah.html?id=${customer.id}" class="font-medium text-indigo-600 hover:text-indigo-900">Detail</a>
+                    <button data-id="${customer.id}" class="btn-edit font-medium text-blue-600 hover:text-blue-900">Edit</button>
+                    <button data-id="${customer.id}" class="btn-delete font-medium text-red-600 hover:text-red-900">Hapus</button>
+                </td>
+            </tr>`;
+        customerTableBody.innerHTML += row;
     });
 };
 
-addLoanForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pokokPinjaman = parseCurrencyValue(loanAmountInput.value);
-    const interestRate = parseInt(document.getElementById('loan-interest-rate').value) / 100;
-    const angsuran = parseInt(document.getElementById('loan-installments').value);
-    const bunga = pokokPinjaman * interestRate;
-    const totalTagihan = pokokPinjaman + bunga;
-    const batch = writeBatch(db);
-    const loanRef = doc(collection(db, 'loans'));
-    batch.set(loanRef, { customerId, pokokPinjaman, bunga, totalTagihan, sisaTagihan: totalTagihan, jumlahAngsuran: angsuran, status: 'Aktif', tanggalPinjam: serverTimestamp() });
-    const transactionRef = doc(collection(db, 'transactions'));
-    batch.set(transactionRef, { customerId, loanId: loanRef.id, jumlah: pokokPinjaman, tipe: 'Pinjaman Baru', keterangan: `Pinjaman Pokok ${formatRupiah(pokokPinjaman)} + Bunga ${formatRupiah(bunga)}`, tanggalTransaksi: serverTimestamp() });
-    try {
-        await batch.commit();
-        alert("Pinjaman baru berhasil ditambahkan!");
-        addLoanForm.reset();
-        addLoanModal.classList.add('hidden');
-    } catch (error) { console.error("Error menambah pinjaman: ", error); alert("Gagal menambah pinjaman."); }
+const loadCustomers = () => {
+    const q = query(collection(db, 'customers'), where('status', '==', 'Aktif'));
+    onSnapshot(q, async (snapshot) => {
+        customerTableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Memproses data...</td></tr>`;
+        const customerPromises = snapshot.docs.map(async (doc) => {
+            const customer = doc.data();
+            const customerId = doc.id;
+            let totalSisaTagihan = 0;
+            let totalInstallments = 0;
+            let paidInstallments = 0;
+
+            const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId), where('status', '==', 'Aktif'));
+            const loanSnapshot = await getDocs(loansQuery);
+            
+            // Hitung total angsuran yang harus dibayar dari semua pinjaman aktif
+            loanSnapshot.forEach(loanDoc => {
+                const loanData = loanDoc.data();
+                totalSisaTagihan += loanData.sisaTagihan;
+                totalInstallments += loanData.jumlahAngsuran;
+            });
+
+            // Hitung total angsuran yang sudah dibayar
+            if (!loanSnapshot.empty) {
+                const paymentsQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'));
+                const paymentSnapshot = await getDocs(paymentsQuery);
+                paidInstallments = paymentSnapshot.size;
+            }
+
+            const remainingInstallments = totalInstallments - paidInstallments;
+            const installmentText = totalInstallments > 0 ? `${remainingInstallments} dari ${totalInstallments} kali` : '-';
+            
+            return { id: customerId, ...customer, totalSisaTagihan, installmentText };
+        });
+        allCustomersData = await Promise.all(customerPromises);
+        renderCustomerTable(allCustomersData);
+        searchInput.dispatchEvent(new Event('input'));
+    });
+};
+
+// --- Logika Pencarian ---
+searchInput.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    if (searchTerm === '') {
+        renderCustomerTable(allCustomersData);
+    } else {
+        const filteredCustomers = allCustomersData.filter(customer =>
+            customer.nama.toLowerCase().includes(searchTerm)
+        );
+        renderCustomerTable(filteredCustomers);
+    }
 });
 
-addPaymentForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const jumlah = parseCurrencyValue(paymentAmountInput.value);
-    const selectedLoanId = paymentLoanSelect.value;
-    if (!selectedLoanId) { alert("Silakan pilih pinjaman yang akan dibayar."); return; }
-    const batch = writeBatch(db);
-    const loanRef = doc(db, 'loans', selectedLoanId);
-    try {
-        const loanDoc = await getDoc(loanRef);
-        if(!loanDoc.exists()) throw new Error("Pinjaman tidak ditemukan!");
-        const currentSisa = loanDoc.data().sisaTagihan;
-        const sisaTagihanBaru = currentSisa - jumlah;
-        batch.update(loanRef, { sisaTagihan: sisaTagihanBaru, status: sisaTagihanBaru <= 0 ? 'Lunas' : 'Aktif' });
-        const transactionRef = doc(collection(db, 'transactions'));
-        batch.set(transactionRef, { customerId, loanId: selectedLoanId, jumlah, tipe: 'Angsuran', keterangan: `Pembayaran angsuran`, tanggalTransaksi: serverTimestamp() });
-        await batch.commit();
-        alert("Pembayaran berhasil dicatat!");
-        addPaymentForm.reset();
-        addPaymentModal.classList.add('hidden');
-    } catch (error) { console.error("Error mencatat pembayaran: ", error); alert("Gagal mencatat pembayaran."); }
+// --- Event Delegation ---
+customerTableBody.addEventListener('click', (e) => {
+    if (e.target.classList.contains('btn-edit')) { openModalForEdit(e.target.dataset.id); }
+    if (e.target.classList.contains('btn-delete')) { openDeleteModal(e.target.dataset.id); }
 });
 
+// --- Auth Guard & Inisialisasi ---
 onAuthStateChanged(auth, (user) => {
     if (user) {
         userEmailDropdown.textContent = user.email;
-        loadCustomerData(customerId);
-        // Terapkan format ke semua input uang di halaman ini
-        formatCurrencyInput(loanAmountInput);
-        formatCurrencyInput(paymentAmountInput);
-    } else { window.location.href = 'login.html'; }
+        loadCustomers();
+    } else {
+        window.location.href = 'login.html';
+    }
 });
 
+// --- Logika Umum ---
 const handleLogout = (e) => { if (e) e.preventDefault(); signOut(auth).catch((error) => console.error("Error saat logout:", error)); };
 logoutButton.addEventListener('click', handleLogout);
 logoutLinkDropdown.addEventListener('click', handleLogout);
