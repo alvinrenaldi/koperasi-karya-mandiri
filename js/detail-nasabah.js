@@ -1,227 +1,363 @@
-// js/nasabah.js
+// js/detail-nasabah.js
 
 import { auth, db } from './firebase-config.js';
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { collection, addDoc, onSnapshot, query, where, serverTimestamp, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, collection, addDoc, onSnapshot, query, where, serverTimestamp, writeBatch, Timestamp, orderBy, getDocs, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Elemen DOM ---
 const logoutButton = document.getElementById('logout-button');
 const sidebar = document.getElementById('sidebar');
 const hamburgerButton = document.getElementById('hamburger-button');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
-const customerTableBody = document.getElementById('customer-table-body');
+const breadcrumbName = document.getElementById('breadcrumb-customer-name');
+const profileInfo = document.getElementById('customer-profile-info');
+const summaryTotalPinjaman = document.getElementById('summary-total-pinjaman');
+const summarySisaTagihan = document.getElementById('summary-sisa-tagihan');
+const transactionHistoryBody = document.getElementById('transaction-history-body');
 const userMenuButton = document.getElementById('user-menu-button');
 const userMenu = document.getElementById('user-menu');
 const userEmailDropdown = document.getElementById('user-email-dropdown');
 const logoutLinkDropdown = document.getElementById('logout-link-dropdown');
-const searchInput = document.getElementById('search-input');
 
-// --- Elemen Modal Tambah/Edit ---
-const customerModal = document.getElementById('customer-modal');
-const modalTitle = document.getElementById('modal-title');
-const addCustomerBtn = document.getElementById('add-customer-btn');
-const closeModalBtn = document.getElementById('close-modal-btn');
-const cancelModalBtn = document.getElementById('cancel-modal-btn');
-const customerForm = document.getElementById('customer-form');
+// Modal Pinjaman
+const addLoanModal = document.getElementById('add-loan-modal');
+const loanModalTitle = document.getElementById('loan-modal-title');
+const addLoanBtn = document.getElementById('add-loan-btn');
+const addLoanForm = document.getElementById('add-loan-form');
+const loanDateInput = document.getElementById('loan-date');
+const loanAmountInput = document.getElementById('loan-amount');
 
-// --- Elemen Modal Hapus ---
-const deleteConfirmModal = document.getElementById('delete-confirm-modal');
-const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
-const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+// Modal Pembayaran
+const addPaymentModal = document.getElementById('add-payment-modal');
+const addPaymentBtn = document.getElementById('add-payment-btn');
+const addPaymentForm = document.getElementById('add-payment-form');
+const paymentModalTitle = document.getElementById('payment-modal-title');
+const paymentLoanSelect = document.getElementById('payment-loan-select');
+const paymentAmountInput = document.getElementById('payment-amount');
+const paymentDateInput = document.getElementById('payment-date');
+
+// Modal Hapus Transaksi
+const deleteTrxConfirmModal = document.getElementById('delete-trx-confirm-modal');
+const cancelDeleteTrxBtn = document.getElementById('cancel-delete-trx-btn');
+const confirmDeleteTrxBtn = document.getElementById('confirm-delete-trx-btn');
 
 // --- State Management ---
-let editMode = false;
-let currentCustomerId = null;
-let customerIdToDelete = null;
-let allCustomersData = [];
+let loanEditMode = false;
+let currentLoanId = null;
+let currentLoanTrxId = null;
+let paymentEditMode = false;
+let currentPaymentTrxId = null;
+let trxToDelete = null;
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
+const formatDate = (timestamp) => timestamp ? timestamp.toDate().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+const dateToYMD = (date) => date.toISOString().split('T')[0];
+const formatCurrencyInput = (inputElement) => {
+    inputElement.addEventListener('keyup', (e) => {
+        let value = e.target.value.replace(/[^,\d]/g, '').toString();
+        let number_string = value.replace(/[^,\d]/g, '').toString(),
+            split = number_string.split(','),
+            sisa = split[0].length % 3,
+            rupiah = split[0].substr(0, sisa),
+            ribuan = split[0].substr(sisa).match(/\d{3}/gi);
+        if (ribuan) { let separator = sisa ? '.' : ''; rupiah += separator + ribuan.join('.'); }
+        rupiah = split[1] != undefined ? rupiah + ',' + split[1] : rupiah;
+        e.target.value = rupiah;
+    });
+};
+const parseCurrencyValue = (formattedValue) => {
+    if (!formattedValue) return 0;
+    return parseInt(formattedValue.replace(/\./g, ''), 10);
+};
+
+const getCustomerIdFromURL = () => new URLSearchParams(window.location.search).get('id');
+const customerId = getCustomerIdFromURL();
 
 // --- Logika Modal ---
-const openModalForAdd = () => {
-    editMode = false;
-    currentCustomerId = null;
-    modalTitle.textContent = 'Tambah Nasabah Baru';
-    customerForm.reset();
-    customerModal.classList.remove('hidden');
-};
-
-const openModalForEdit = async (id) => {
-    editMode = true;
-    currentCustomerId = id;
-    modalTitle.textContent = 'Edit Data Nasabah';
-    try {
-        const customerRef = doc(db, 'customers', id);
-        const docSnap = await getDoc(customerRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            document.getElementById('customer-name').value = data.nama;
-            document.getElementById('customer-phone').value = data.telepon;
-            document.getElementById('customer-address').value = data.alamat;
-            customerModal.classList.remove('hidden');
-        }
-    } catch (error) { console.error("Gagal mengambil data untuk diedit:", error); }
-};
-
-const closeModal = () => {
-    customerModal.classList.add('hidden');
-    customerForm.reset();
-};
-
-addCustomerBtn.addEventListener('click', openModalForAdd);
-closeModalBtn.addEventListener('click', closeModal);
-cancelModalBtn.addEventListener('click', closeModal);
-
-const openDeleteModal = (id) => {
-    customerIdToDelete = id;
-    deleteConfirmModal.classList.remove('hidden');
-};
-const closeDeleteModal = () => {
-    customerIdToDelete = null;
-    deleteConfirmModal.classList.add('hidden');
-};
-cancelDeleteBtn.addEventListener('click', closeDeleteModal);
-confirmDeleteBtn.addEventListener('click', async () => {
-    if (!customerIdToDelete) return;
-    const deleteButton = confirmDeleteBtn;
-    deleteButton.disabled = true;
-    deleteButton.textContent = "Menghapus...";
-    try {
-        const customerRef = doc(db, 'customers', customerIdToDelete);
-        await updateDoc(customerRef, { status: 'Dihapus' });
-    } catch (error) {
-        console.error("Gagal menghapus nasabah:", error);
-        alert("Gagal menghapus nasabah.");
-    } finally {
-        deleteButton.disabled = false;
-        deleteButton.textContent = "Ya, Hapus";
-        closeDeleteModal();
-    }
+document.querySelectorAll('.btn-cancel-modal').forEach(btn => {
+    btn.addEventListener('click', () => {
+        addLoanModal.classList.add('hidden');
+        addPaymentModal.classList.add('hidden');
+    });
 });
 
-customerForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Menyimpan...';
-    const customerData = {
-        nama: document.getElementById('customer-name').value,
-        telepon: document.getElementById('customer-phone').value,
-        alamat: document.getElementById('customer-address').value,
-    };
-    try {
-        if (editMode) {
-            const customerRef = doc(db, 'customers', currentCustomerId);
-            await updateDoc(customerRef, customerData);
-        } else {
-            await addDoc(collection(db, 'customers'), { ...customerData, status: 'Aktif', dibuatPada: serverTimestamp() });
+// --- Logika Pinjaman (Tambah & Edit) ---
+const openLoanModal = async (loanId = null, trxId = null) => {
+    loanEditMode = !!loanId;
+    currentLoanId = loanId;
+    currentLoanTrxId = trxId;
+    addLoanForm.reset();
+
+    if (loanEditMode) {
+        loanModalTitle.textContent = "Edit Data Pinjaman";
+        const loanRef = doc(db, 'loans', loanId);
+        const loanSnap = await getDoc(loanRef);
+        if (loanSnap.exists()) {
+            const loan = loanSnap.data();
+            loanDateInput.value = dateToYMD(loan.tanggalPinjam.toDate());
+            loanAmountInput.value = loan.pokokPinjaman;
+            document.getElementById('loan-installments').value = loan.jumlahAngsuran;
+            formatCurrencyInput(loanAmountInput); // Terapkan format saat edit
         }
-        closeModal();
-    } catch (error) {
-        console.error("Error menyimpan data nasabah: ", error);
-        alert("Gagal menyimpan data.");
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = 'Simpan';
-    }
-});
-
-// --- Memuat dan Menampilkan Daftar Nasabah ---
-const renderCustomerTable = (customersToRender) => {
-    if (customersToRender.length === 0) {
-        customerTableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Nasabah tidak ditemukan.</td></tr>`;
-        return;
-    }
-    customerTableBody.innerHTML = '';
-    customersToRender.forEach(customer => {
-        const row = `
-            <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4">
-                    <div class="font-semibold text-gray-900">${customer.nama}</div>
-                    <div class="text-sm text-gray-500">${customer.alamat}</div>
-                </td>
-                <td class="px-6 py-4 font-medium text-gray-800">${formatRupiah(customer.totalSisaTagihan)}</td>
-                <td class="px-6 py-4 text-gray-700">${customer.installmentText}</td>
-                <td class="px-6 py-4 text-sm space-x-2">
-                    <a href="detail-nasabah.html?id=${customer.id}" class="font-medium text-indigo-600 hover:text-indigo-900">Detail</a>
-                    <button data-id="${customer.id}" class="btn-edit font-medium text-blue-600 hover:text-blue-900">Edit</button>
-                    <button data-id="${customer.id}" class="btn-delete font-medium text-red-600 hover:text-red-900">Hapus</button>
-                </td>
-            </tr>`;
-        customerTableBody.innerHTML += row;
-    });
-};
-
-const loadCustomers = () => {
-    const q = query(collection(db, 'customers'), where('status', '==', 'Aktif'));
-    onSnapshot(q, async (snapshot) => {
-        customerTableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Memproses data...</td></tr>`;
-        const customerPromises = snapshot.docs.map(async (doc) => {
-            const customer = doc.data();
-            const customerId = doc.id;
-            let totalSisaTagihan = 0;
-            let totalInstallments = 0;
-            let paidInstallments = 0;
-
-            const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId), where('status', '==', 'Aktif'));
-            const loanSnapshot = await getDocs(loansQuery);
-            
-            // Hitung total angsuran yang harus dibayar dari semua pinjaman aktif
-            loanSnapshot.forEach(loanDoc => {
-                const loanData = loanDoc.data();
-                totalSisaTagihan += loanData.sisaTagihan;
-                totalInstallments += loanData.jumlahAngsuran;
-            });
-
-            // Hitung total angsuran yang sudah dibayar
-            if (!loanSnapshot.empty) {
-                const paymentsQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'));
-                const paymentSnapshot = await getDocs(paymentsQuery);
-                paidInstallments = paymentSnapshot.size;
-            }
-
-            const remainingInstallments = totalInstallments - paidInstallments;
-            const installmentText = totalInstallments > 0 ? `${remainingInstallments} dari ${totalInstallments} kali` : '-';
-            
-            return { id: customerId, ...customer, totalSisaTagihan, installmentText };
-        });
-        allCustomersData = await Promise.all(customerPromises);
-        renderCustomerTable(allCustomersData);
-        searchInput.dispatchEvent(new Event('input'));
-    });
-};
-
-// --- Logika Pencarian ---
-searchInput.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase();
-    if (searchTerm === '') {
-        renderCustomerTable(allCustomersData);
     } else {
-        const filteredCustomers = allCustomersData.filter(customer =>
-            customer.nama.toLowerCase().includes(searchTerm)
-        );
-        renderCustomerTable(filteredCustomers);
+        loanModalTitle.textContent = "Beri Pinjaman Baru";
+        loanDateInput.value = dateToYMD(new Date());
+    }
+    addLoanModal.classList.remove('hidden');
+};
+addLoanBtn.addEventListener('click', () => openLoanModal());
+
+// --- Logika Pembayaran (Tambah & Edit) ---
+const openPaymentModal = async (trxId = null) => {
+    paymentEditMode = !!trxId;
+    currentPaymentTrxId = trxId;
+    addPaymentForm.reset();
+
+    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId));
+    const loanSnapshot = await getDocs(loansQuery);
+    paymentLoanSelect.innerHTML = '';
+    const loansMap = new Map();
+    loanSnapshot.forEach(doc => {
+        loansMap.set(doc.id, doc.data());
+        const loan = doc.data();
+        const option = document.createElement('option');
+        option.value = doc.id;
+        option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
+        paymentLoanSelect.appendChild(option);
+    });
+
+    if (paymentEditMode) {
+        paymentModalTitle.textContent = "Edit Catatan Pembayaran";
+        const trxRef = doc(db, 'transactions', trxId);
+        const trxSnap = await getDoc(trxRef);
+        if (trxSnap.exists()) {
+            const trx = trxSnap.data();
+            paymentAmountInput.value = trx.jumlah;
+            formatCurrencyInput(paymentAmountInput);
+            paymentDateInput.value = dateToYMD(trx.tanggalTransaksi.toDate());
+            paymentLoanSelect.value = trx.loanId;
+            paymentLoanSelect.disabled = true;
+        }
+    } else {
+        paymentModalTitle.textContent = "Catat Pembayaran Angsuran";
+        paymentDateInput.value = dateToYMD(new Date());
+        paymentLoanSelect.disabled = false;
+        paymentLoanSelect.innerHTML = '';
+        loanSnapshot.docs.filter(doc => loansMap.get(doc.id).status === 'Aktif').forEach(doc => {
+             const loan = doc.data();
+             const option = document.createElement('option');
+             option.value = doc.id;
+             option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
+             paymentLoanSelect.appendChild(option);
+        });
+        if(paymentLoanSelect.innerHTML === ''){
+            alert("Tidak ada pinjaman aktif yang bisa dibayar.");
+            return;
+        }
+    }
+    addPaymentModal.classList.remove('hidden');
+};
+addPaymentBtn.addEventListener('click', () => openPaymentModal());
+
+// --- Logika Hapus Transaksi ---
+cancelDeleteTrxBtn.addEventListener('click', () => deleteTrxConfirmModal.classList.add('hidden'));
+const openDeleteTrxModal = (trxId, loanId, amount, type) => {
+    trxToDelete = { trxId, loanId, amount, type };
+    deleteTrxConfirmModal.classList.remove('hidden');
+};
+confirmDeleteTrxBtn.addEventListener('click', async () => {
+    if (!trxToDelete) return;
+
+    const { trxId, loanId, amount, type } = trxToDelete;
+    const batch = writeBatch(db);
+    const trxRef = doc(db, 'transactions', trxId);
+
+    try {
+        if (type === 'Angsuran') {
+            const loanRef = doc(db, 'loans', loanId);
+            const loanSnap = await getDoc(loanRef);
+            if (loanSnap.exists()) {
+                const newSisaTagihan = loanSnap.data().sisaTagihan + amount;
+                batch.update(loanRef, { sisaTagihan: newSisaTagihan, status: 'Aktif' });
+            }
+        } else if (type === 'Pinjaman Baru') {
+            const loanRef = doc(db, 'loans', loanId);
+            const paymentsQuery = query(collection(db, 'transactions'), where('loanId', '==', loanId), where('tipe', '==', 'Angsuran'));
+            const paymentSnapshot = await getDocs(paymentsQuery);
+            paymentSnapshot.forEach(paymentDoc => batch.delete(paymentDoc.ref));
+            batch.delete(loanRef);
+        }
+        batch.delete(trxRef);
+        await batch.commit();
+        alert("Catatan transaksi berhasil dihapus.");
+    } catch (error) {
+        console.error("Gagal menghapus transaksi:", error);
+        alert("Gagal menghapus transaksi.");
+    } finally {
+        deleteTrxConfirmModal.classList.add('hidden');
+        trxToDelete = null;
     }
 });
 
-// --- Event Delegation ---
-customerTableBody.addEventListener('click', (e) => {
-    if (e.target.classList.contains('btn-edit')) { openModalForEdit(e.target.dataset.id); }
-    if (e.target.classList.contains('btn-delete')) { openDeleteModal(e.target.dataset.id); }
+// --- Event Delegation untuk Riwayat Transaksi ---
+transactionHistoryBody.addEventListener('click', (e) => {
+    const target = e.target;
+    const trxId = target.dataset.id;
+    const loanId = target.dataset.loanid;
+    const amount = parseInt(target.dataset.amount, 10);
+    const type = target.dataset.type;
+
+    if (target.classList.contains('btn-edit-trx')) {
+        if (type === 'Angsuran') openPaymentModal(trxId);
+        else if (type === 'Pinjaman Baru') openLoanModal(loanId, trxId);
+    }
+    if (target.classList.contains('btn-delete-trx')) {
+        openDeleteTrxModal(trxId, loanId, amount, type);
+    }
 });
 
-// --- Auth Guard & Inisialisasi ---
+// --- Memuat Data Utama ---
+const loadCustomerData = (id) => {
+    if (!id) { window.location.href = 'nasabah.html'; return; }
+    
+    const customerRef = doc(db, 'customers', id);
+    getDoc(customerRef).then(docSnap => {
+        if (docSnap.exists()) {
+            const customer = docSnap.data();
+            breadcrumbName.textContent = customer.nama;
+            profileInfo.innerHTML = `<p><strong>Nama:</strong> ${customer.nama}</p><p><strong>Telepon:</strong> ${customer.telepon}</p><p><strong>Alamat:</strong> ${customer.alamat}</p>`;
+        } else { alert("Data nasabah tidak ditemukan."); }
+    });
+
+    const transactionsQuery = query(collection(db, 'transactions'), where('customerId', '==', id), orderBy('tanggalTransaksi', 'desc'));
+    onSnapshot(transactionsQuery, (snapshot) => {
+        transactionHistoryBody.innerHTML = snapshot.empty ? `<tr><td colspan="5" class="p-6 text-center text-gray-500">Belum ada riwayat transaksi.</td></tr>` : '';
+        snapshot.forEach(doc => {
+            const trx = doc.data();
+            const trxId = doc.id;
+            const actionButtons = `
+                <td class="px-6 py-4 text-sm space-x-2">
+                    <button data-id="${trxId}" data-loanid="${trx.loanId}" data-type="${trx.tipe}" class="btn-edit-trx font-medium text-blue-600 hover:text-blue-900">Edit</button>
+                    <button data-id="${trxId}" data-loanid="${trx.loanId}" data-amount="${trx.jumlah}" data-type="${trx.tipe}" class="btn-delete-trx font-medium text-red-600 hover:text-red-900">Hapus</button>
+                </td>
+            `;
+            const rowClass = trx.tipe === 'Pinjaman Baru' ? 'bg-red-50' : (trx.tipe === 'Angsuran' ? 'bg-green-50' : 'bg-blue-50');
+            transactionHistoryBody.innerHTML += `<tr class="${rowClass}"><td class="px-6 py-4">${formatDate(trx.tanggalTransaksi)}</td><td class="px-6 py-4 font-medium">${trx.tipe}</td><td class="px-6 py-4">${formatRupiah(trx.jumlah)}</td><td class="px-6 py-4 text-sm text-gray-600">${trx.keterangan || '-'}</td>${actionButtons}</tr>`;
+        });
+    });
+
+    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', id));
+    onSnapshot(loansQuery, (snapshot) => {
+        let totalTagihan = 0, totalSisaTagihan = 0;
+        snapshot.forEach(doc => {
+            const loan = doc.data();
+            totalTagihan += loan.totalTagihan;
+            if(loan.status === 'Aktif') totalSisaTagihan += loan.sisaTagihan;
+        });
+        summaryTotalPinjaman.textContent = formatRupiah(totalTagihan);
+        summarySisaTagihan.textContent = formatRupiah(totalSisaTagihan);
+    });
+};
+
+// --- Logika Form Submit ---
+addLoanForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pokokPinjaman = parseCurrencyValue(loanAmountInput.value);
+    const loanDateString = loanDateInput.value;
+    if (!loanDateString) { alert("Silakan pilih tanggal pinjaman."); return; }
+    const transactionDate = Timestamp.fromDate(new Date(loanDateString));
+    const interestRate = parseInt(document.getElementById('loan-interest-rate').value) / 100;
+    const angsuran = parseInt(document.getElementById('loan-installments').value);
+    const bunga = pokokPinjaman * interestRate;
+    const totalTagihan = pokokPinjaman + bunga;
+    
+    const batch = writeBatch(db);
+
+    if (loanEditMode) {
+        // Logika Edit Pinjaman
+        const loanRef = doc(db, 'loans', currentLoanId);
+        const trxRef = doc(db, 'transactions', currentLoanTrxId);
+        const loanSnap = await getDoc(loanRef);
+        if(!loanSnap.exists()) throw new Error("Pinjaman tidak ditemukan!");
+
+        const sudahDibayar = loanSnap.data().totalTagihan - loanSnap.data().sisaTagihan;
+        const newSisaTagihan = totalTagihan - sudahDibayar;
+        
+        batch.update(loanRef, { pokokPinjaman, bunga, totalTagihan, sisaTagihan: newSisaTagihan, jumlahAngsuran: angsuran, tanggalPinjam: transactionDate });
+        batch.update(trxRef, { jumlah: pokokPinjaman, keterangan: `Pinjaman Pokok ${formatRupiah(pokokPinjaman)} + Bunga ${formatRupiah(bunga)}`, tanggalTransaksi: transactionDate });
+
+        try {
+            await batch.commit();
+            alert("Pinjaman berhasil diperbarui!");
+        } catch (error) { console.error("Error memperbarui pinjaman: ", error); alert("Gagal memperbarui pinjaman."); }
+
+    } else {
+        // Logika Tambah Pinjaman Baru
+        const loanRef = doc(collection(db, 'loans'));
+        batch.set(loanRef, { customerId, pokokPinjaman, bunga, totalTagihan, sisaTagihan: totalTagihan, jumlahAngsuran: angsuran, status: 'Aktif', tanggalPinjam: transactionDate });
+        const transactionRef = doc(collection(db, 'transactions'));
+        batch.set(transactionRef, { customerId, loanId: loanRef.id, jumlah: pokokPinjaman, tipe: 'Pinjaman Baru', keterangan: `Pinjaman Pokok ${formatRupiah(pokokPinjaman)} + Bunga ${formatRupiah(bunga)}`, tanggalTransaksi: transactionDate });
+        
+        try {
+            await batch.commit();
+            alert("Pinjaman baru berhasil ditambahkan!");
+        } catch (error) { console.error("Error menambah pinjaman: ", error); alert("Gagal menambah pinjaman."); }
+    }
+    
+    addLoanForm.reset();
+    addLoanModal.classList.add('hidden');
+});
+
+addPaymentForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const jumlahBaru = parseCurrencyValue(paymentAmountInput.value);
+    const selectedLoanId = paymentLoanSelect.value;
+    const paymentDateString = paymentDateInput.value;
+    if (!selectedLoanId || !paymentDateString) { alert("Data tidak lengkap."); return; }
+    const transactionDate = Timestamp.fromDate(new Date(paymentDateString));
+    const batch = writeBatch(db);
+    const loanRef = doc(db, 'loans', selectedLoanId);
+
+    try {
+        if (paymentEditMode) {
+            const trxRef = doc(db, 'transactions', currentPaymentTrxId);
+            const trxSnap = await getDoc(trxRef);
+            const loanSnap = await getDoc(loanRef);
+            if (!trxSnap.exists() || !loanSnap.exists()) throw new Error("Data tidak ditemukan!");
+            const jumlahLama = trxSnap.data().jumlah;
+            const selisih = jumlahBaru - jumlahLama;
+            const sisaTagihanBaru = loanSnap.data().sisaTagihan - selisih;
+            batch.update(loanRef, { sisaTagihan: sisaTagihanBaru, status: sisaTagihanBaru <= 0 ? 'Lunas' : 'Aktif' });
+            batch.update(trxRef, { jumlah: jumlahBaru, tanggalTransaksi: transactionDate });
+            await batch.commit();
+            alert("Pembayaran berhasil diperbarui!");
+        } else {
+            const loanSnap = await getDoc(loanRef);
+            if(!loanSnap.exists()) throw new Error("Pinjaman tidak ditemukan!");
+            const sisaTagihanBaru = loanSnap.data().sisaTagihan - jumlahBaru;
+            batch.update(loanRef, { sisaTagihan: sisaTagihanBaru, status: sisaTagihanBaru <= 0 ? 'Lunas' : 'Aktif' });
+            const trxRef = doc(collection(db, 'transactions'));
+            batch.set(trxRef, { customerId, loanId: selectedLoanId, jumlah: jumlahBaru, tipe: 'Angsuran', keterangan: `Pembayaran angsuran`, tanggalTransaksi: transactionDate });
+            await batch.commit();
+            alert("Pembayaran berhasil dicatat!");
+        }
+        addPaymentForm.reset();
+        addPaymentModal.classList.add('hidden');
+    } catch (error) { console.error("Error menyimpan pembayaran: ", error); alert("Gagal menyimpan pembayaran."); }
+});
+
+// --- Inisialisasi dan Auth Guard ---
 onAuthStateChanged(auth, (user) => {
     if (user) {
         userEmailDropdown.textContent = user.email;
-        loadCustomers();
-    } else {
-        window.location.href = 'login.html';
-    }
+        loadCustomerData(customerId);
+        formatCurrencyInput(loanAmountInput);
+        formatCurrencyInput(paymentAmountInput);
+    } else { window.location.href = 'login.html'; }
 });
 
-// --- Logika Umum ---
+// --- Logika Umum (Logout, Sidebar) ---
 const handleLogout = (e) => { if (e) e.preventDefault(); signOut(auth).catch((error) => console.error("Error saat logout:", error)); };
 logoutButton.addEventListener('click', handleLogout);
 logoutLinkDropdown.addEventListener('click', handleLogout);

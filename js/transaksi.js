@@ -2,7 +2,7 @@
 
 import { auth, db } from './firebase-config.js';
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { collection, onSnapshot, query, where, Timestamp, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { collection, onSnapshot, query, where, Timestamp, orderBy, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Elemen DOM ---
 const logoutButton = document.getElementById('logout-button');
@@ -20,13 +20,37 @@ const filterType = document.getElementById('filter-type');
 const filterBtn = document.getElementById('filter-btn');
 const resetBtn = document.getElementById('reset-btn');
 
+// Elemen Panel Ringkasan Baru
+const totalMasukEl = document.getElementById('total-masuk');
+const totalKeluarEl = document.getElementById('total-keluar');
+
+// --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
-const formatDate = (timestamp) => timestamp ? timestamp.toDate().toLocaleDateString('id-ID') : '-';
+const formatDate = (timestamp) => timestamp ? timestamp.toDate().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-';
 
 let unsubscribe;
+let customersMap = new Map(); // Cache untuk data nasabah agar lebih cepat
+
+// Fungsi untuk mengambil semua data nasabah dan menyimpannya di map
+const fetchAllCustomers = async () => {
+    try {
+        const customersCollection = collection(db, 'customers');
+        const customerSnapshot = await getDocs(customersCollection);
+        customersMap.clear(); // Bersihkan cache sebelum diisi ulang
+        customerSnapshot.forEach(doc => {
+            customersMap.set(doc.id, doc.data());
+        });
+        console.log("Cache data nasabah berhasil diperbarui.");
+    } catch (error) {
+        console.error("Gagal mengambil data nasabah:", error);
+    }
+};
 
 const loadAllTransactions = (filters = {}) => {
-    if (unsubscribe) unsubscribe();
+    if (unsubscribe) {
+        unsubscribe(); // Hentikan listener sebelumnya untuk mencegah tumpang tindih
+    }
+
     let q = query(collection(db, 'transactions'), orderBy('tanggalTransaksi', 'desc'));
     if (filters.startDate) q = query(q, where('tanggalTransaksi', '>=', Timestamp.fromDate(new Date(filters.startDate))));
     if (filters.endDate) {
@@ -37,45 +61,55 @@ const loadAllTransactions = (filters = {}) => {
     if (filters.type && filters.type !== 'Semua') q = query(q, where('tipe', '==', filters.type));
 
     allTransactionsBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Memuat transaksi...</td></tr>`;
-    unsubscribe = onSnapshot(q, async (snapshot) => {
+    totalMasukEl.textContent = 'Memuat...';
+    totalKeluarEl.textContent = 'Memuat...';
+
+    unsubscribe = onSnapshot(q, (snapshot) => {
+        let totalMasuk = 0;
+        let totalKeluar = 0;
+        let rowsHtml = ''; // Kumpulkan semua baris HTML di sini
+
         if (snapshot.empty) {
-            allTransactionsBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Tidak ada transaksi.</td></tr>`;
+            allTransactionsBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Tidak ada transaksi yang cocok dengan filter.</td></tr>`;
+            totalMasukEl.textContent = formatRupiah(0);
+            totalKeluarEl.textContent = formatRupiah(0);
             return;
         }
-        allTransactionsBody.innerHTML = '';
-        for (const trxDoc of snapshot.docs) {
+
+        // Loop melalui data tanpa await untuk kecepatan
+        snapshot.forEach(trxDoc => {
             const trx = trxDoc.data();
             let detailText = trx.keterangan || '-';
             let rowClass = '', amountClass = '';
 
-            if (trx.tipe === 'Deposito') {
-                rowClass = 'bg-blue-50';
-                amountClass = 'text-blue-600';
-            } else if (trx.tipe === 'Angsuran') {
-                rowClass = 'bg-green-50';
+            if (trx.tipe === 'Deposito' || trx.tipe === 'Angsuran') {
+                totalMasuk += trx.jumlah;
                 amountClass = 'text-green-600';
-            } else if (trx.tipe === 'Pinjaman Baru') {
-                rowClass = 'bg-red-50';
+                rowClass = trx.tipe === 'Deposito' ? 'bg-blue-50' : 'bg-green-50';
+            } else if (trx.tipe === 'Pinjaman Baru' || trx.tipe === 'Operasional') {
+                totalKeluar += trx.jumlah;
                 amountClass = 'text-red-600';
+                rowClass = trx.tipe === 'Operasional' ? 'bg-yellow-50' : 'bg-red-50';
             }
 
-            if (trx.customerId) {
-                const customerRef = doc(db, 'customers', trx.customerId);
-                const customerSnap = await getDoc(customerRef);
-                if (customerSnap.exists()) {
-                    detailText = `Nasabah: ${customerSnap.data().nama}`;
-                }
+            // Ambil nama nasabah dari cache, bukan dari database (lebih cepat)
+            if (trx.customerId && customersMap.has(trx.customerId)) {
+                detailText = `Nasabah: ${customersMap.get(trx.customerId).nama}`;
             }
 
-            const row = `
+            rowsHtml += `
                 <tr class="${rowClass}">
                     <td class="px-6 py-4">${formatDate(trx.tanggalTransaksi)}</td>
                     <td class="px-6 py-4 text-gray-700">${detailText}</td>
                     <td class="px-6 py-4 font-semibold ${amountClass}">${trx.tipe}</td>
                     <td class="px-6 py-4 font-semibold ${amountClass}">${formatRupiah(trx.jumlah)}</td>
                 </tr>`;
-            allTransactionsBody.innerHTML += row;
-        }
+        });
+
+        // Update DOM sekali saja setelah semua data diproses
+        allTransactionsBody.innerHTML = rowsHtml;
+        totalMasukEl.textContent = formatRupiah(totalMasuk);
+        totalKeluarEl.textContent = formatRupiah(totalKeluar);
     });
 };
 
@@ -87,10 +121,11 @@ resetBtn.addEventListener('click', () => {
     loadAllTransactions();
 });
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
     if (user) {
         userEmailDropdown.textContent = user.email;
-        loadAllTransactions();
+        await fetchAllCustomers(); // Tunggu data nasabah selesai diambil sekali saja
+        loadAllTransactions(); // Baru muat data transaksi
     } else { window.location.href = 'login.html'; }
 });
 

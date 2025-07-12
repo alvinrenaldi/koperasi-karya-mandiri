@@ -18,6 +18,8 @@ const pinjamanAktifEl = document.getElementById('pinjaman-aktif');
 const nasabahAktifEl = document.getElementById('nasabah-aktif');
 const totalModalEl = document.getElementById('total-modal');
 const totalKeuntunganEl = document.getElementById('total-keuntungan');
+const targetHarianEl = document.getElementById('target-harian');
+const pemasukanHariIniEl = document.getElementById('pemasukan-hari-ini');
 
 // Elemen Modal Deposito
 const addDepositBtn = document.getElementById('add-deposit-btn');
@@ -25,6 +27,13 @@ const addDepositModal = document.getElementById('add-deposit-modal');
 const cancelDepositBtn = document.getElementById('cancel-deposit-btn');
 const addDepositForm = document.getElementById('add-deposit-form');
 const depositAmountInput = document.getElementById('deposit-amount');
+
+// Elemen Modal Pengeluaran Baru
+const addExpenseBtn = document.getElementById('add-expense-btn');
+const addExpenseModal = document.getElementById('add-expense-modal');
+const cancelExpenseBtn = document.getElementById('cancel-expense-btn');
+const addExpenseForm = document.getElementById('add-expense-form');
+const expenseAmountInput = document.getElementById('expense-amount');
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
@@ -36,10 +45,7 @@ const formatCurrencyInput = (inputElement) => {
             sisa = split[0].length % 3,
             rupiah = split[0].substr(0, sisa),
             ribuan = split[0].substr(sisa).match(/\d{3}/gi);
-        if (ribuan) {
-            let separator = sisa ? '.' : '';
-            rupiah += separator + ribuan.join('.');
-        }
+        if (ribuan) { let separator = sisa ? '.' : ''; rupiah += separator + ribuan.join('.'); }
         rupiah = split[1] != undefined ? rupiah + ',' + split[1] : rupiah;
         e.target.value = rupiah;
     });
@@ -49,17 +55,19 @@ const parseCurrencyValue = (formattedValue) => {
     return parseInt(formattedValue.replace(/\./g, ''), 10);
 };
 
-// --- Logika Modal Deposito ---
+// --- Logika Modal ---
 addDepositBtn.addEventListener('click', () => addDepositModal.classList.remove('hidden'));
 cancelDepositBtn.addEventListener('click', () => addDepositModal.classList.add('hidden'));
+addExpenseBtn.addEventListener('click', () => addExpenseModal.classList.remove('hidden'));
+cancelExpenseBtn.addEventListener('click', () => addExpenseModal.classList.add('hidden'));
+
 addDepositForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const amount = parseCurrencyValue(depositAmountInput.value);
     const description = document.getElementById('deposit-description').value;
     if (isNaN(amount) || amount <= 0) { alert("Jumlah deposit tidak valid."); return; }
     const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = "Menyimpan...";
+    submitButton.disabled = true; submitButton.textContent = "Menyimpan...";
     try {
         await addDoc(collection(db, 'transactions'), { tipe: 'Deposito', jumlah: amount, keterangan: description, tanggalTransaksi: serverTimestamp() });
         alert("Deposit berhasil ditambahkan!");
@@ -69,59 +77,87 @@ addDepositForm.addEventListener('submit', async (e) => {
         console.error("Gagal menambahkan deposit:", error);
         alert("Gagal menambahkan deposit.");
     } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = "Simpan Deposit";
+        submitButton.disabled = false; submitButton.textContent = "Simpan Deposit";
     }
 });
 
+addExpenseForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const amount = parseCurrencyValue(expenseAmountInput.value);
+    const description = document.getElementById('expense-description').value;
+    if (isNaN(amount) || amount <= 0) { alert("Jumlah pengeluaran tidak valid."); return; }
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    submitButton.disabled = true; submitButton.textContent = "Menyimpan...";
+    try {
+        await addDoc(collection(db, 'transactions'), { tipe: 'Operasional', jumlah: amount, keterangan: description, tanggalTransaksi: serverTimestamp() });
+        alert("Pengeluaran berhasil dicatat!");
+        addExpenseForm.reset();
+        addExpenseModal.classList.add('hidden');
+    } catch (error) {
+        console.error("Gagal mencatat pengeluaran:", error);
+        alert("Gagal mencatat pengeluaran.");
+    } finally {
+        submitButton.disabled = false; submitButton.textContent = "Simpan Pengeluaran";
+    }
+});
+
+
 const loadDashboardData = () => {
     const setLoading = (el) => el.textContent = 'Memuat...';
-    setLoading(kasSaatIniEl); setLoading(pinjamanAktifEl); setLoading(nasabahAktifEl); setLoading(totalModalEl); setLoading(totalKeuntunganEl);
+    setLoading(kasSaatIniEl); setLoading(pinjamanAktifEl); setLoading(nasabahAktifEl); setLoading(totalModalEl); setLoading(totalKeuntunganEl); setLoading(targetHarianEl); setLoading(pemasukanHariIniEl);
 
-    // Kalkulasi Kas, Modal, dan Keuntungan dari Transaksi
+    // Kalkulasi dari Transaksi (Kas, Modal, Pemasukan Hari Ini)
+    const today = new Date();
+    const startOfToday = new Date(today.setHours(0, 0, 0, 0));
+    const endOfToday = new Date(today.setHours(23, 59, 59, 999));
+
     onSnapshot(collection(db, 'transactions'), (snapshot) => {
-        let totalPinjamanBaru = 0, totalAngsuran = 0, totalModal = 0;
+        let totalPinjamanBaru = 0, totalAngsuran = 0, totalModal = 0, pemasukanHariIni = 0, totalOperasional = 0;
         snapshot.forEach(doc => {
             const trx = doc.data();
-            if (trx.tipe === 'Pinjaman Baru') totalPinjamanBaru += trx.jumlah;
-            else if (trx.tipe === 'Angsuran') totalAngsuran += trx.jumlah;
-            else if (trx.tipe === 'Deposito') totalModal += trx.jumlah;
+            const trxDate = trx.tanggalTransaksi.toDate();
+            if (trx.tipe === 'Pinjaman Baru') {
+                totalPinjamanBaru += trx.jumlah;
+            } else if (trx.tipe === 'Angsuran') {
+                totalAngsuran += trx.jumlah;
+                if (trxDate >= startOfToday && trxDate <= endOfToday) {
+                    pemasukanHariIni += trx.jumlah;
+                }
+            } else if (trx.tipe === 'Deposito') {
+                totalModal += trx.jumlah;
+            } else if (trx.tipe === 'Operasional') {
+                totalOperasional += trx.jumlah;
+            }
         });
-        const kasSaatIni = totalModal + totalAngsuran - totalPinjamanBaru;
+        const kasSaatIni = totalModal + totalAngsuran - totalPinjamanBaru - totalOperasional;
         totalModalEl.textContent = formatRupiah(totalModal);
         kasSaatIniEl.textContent = formatRupiah(kasSaatIni);
+        pemasukanHariIniEl.textContent = formatRupiah(pemasukanHariIni);
 
-        // --- PERBAIKAN LOGIKA KEUNTUNGAN ---
         const keuntunganNominal = kasSaatIni - totalModal;
         let keuntunganPersen = 0;
         if (totalModal > 0) {
             keuntunganPersen = (keuntunganNominal / totalModal) * 100;
         }
-        
-        // Atur tampilan berdasarkan nilai keuntungan (positif atau negatif)
         totalKeuntunganEl.textContent = `${formatRupiah(keuntunganNominal)} (${keuntunganPersen.toFixed(1)}%)`;
         totalKeuntunganEl.classList.remove('text-green-700', 'text-red-700');
-        if (keuntunganNominal < 0) {
-            totalKeuntunganEl.classList.add('text-red-700');
-        } else {
-            totalKeuntunganEl.classList.add('text-green-700');
-        }
+        totalKeuntunganEl.classList.add(keuntunganNominal < 0 ? 'text-red-700' : 'text-green-700');
     });
 
-    // Kalkulasi dari data Pinjaman (Loans)
-    onSnapshot(collection(db, 'loans'), (snapshot) => {
-        let totalSisaTagihan = 0;
+    // Kalkulasi dari Pinjaman (Target Harian, Sisa Tagihan, Nasabah Aktif)
+    onSnapshot(query(collection(db, 'loans'), where('status', '==', 'Aktif')), (snapshot) => {
+        let totalSisaTagihan = 0, targetHarian = 0;
         const activeCustomerIds = new Set();
-        
         snapshot.forEach(doc => {
             const loan = doc.data();
-            if (loan.status === 'Aktif') {
-                totalSisaTagihan += loan.sisaTagihan;
-                activeCustomerIds.add(loan.customerId);
+            totalSisaTagihan += loan.sisaTagihan;
+            if (loan.jumlahAngsuran > 0) {
+                targetHarian += loan.totalTagihan / loan.jumlahAngsuran;
             }
+            activeCustomerIds.add(loan.customerId);
         });
-
         pinjamanAktifEl.textContent = formatRupiah(totalSisaTagihan);
+        targetHarianEl.textContent = formatRupiah(targetHarian);
         nasabahAktifEl.textContent = activeCustomerIds.size;
     });
 };
@@ -131,6 +167,7 @@ onAuthStateChanged(auth, (user) => {
         userEmailDropdown.textContent = user.email;
         loadDashboardData();
         formatCurrencyInput(depositAmountInput);
+        formatCurrencyInput(expenseAmountInput); // Terapkan format ke input pengeluaran
     } else { window.location.href = 'login.html'; }
 });
 
