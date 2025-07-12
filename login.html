@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Koperasi Karya Mandiri</title>
+    <!-- Memuat Tailwind CSS untuk styling cepat -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Google (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- File CSS kustom Anda -->
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Menjadikan font Inter sebagai default */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg">
+            <!-- Header Form -->
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-gray-900">Koperasi Karya Mandiri</h1>
+                <p class="mt-2 text-sm text-gray-600">Silakan masuk untuk melanjutkan</p>
+            </div>
+
+            <!-- Form Login -->
+            <form id="login-form" class="space-y-6">
+                <!-- Input Email -->
+                <div>
+                    <label for="login-email" class="text-sm font-medium text-gray-700">Alamat Email</label>
+                    <input id="login-email" name="email" type="email" autocomplete="email" required
+                           class="w-full px-3 py-2 mt-1 text-gray-900 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+
+                <!-- Input Password -->
+                <div>
+                    <label for="login-password" class="text-sm font-medium text-gray-700">Password</label>
+                    <input id="login-password" name="password" type="password" autocomplete="current-password" required
+                           class="w-full px-3 py-2 mt-1 text-gray-900 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+
+                <!-- Tombol Login -->
+                <div>
+                    <button id="login-button" type="submit"
+                            class="w-full px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Masuk
+                    </button>
+                </div>
+            </form>
+
+            <!-- Pesan Error -->
+            <div id="login-message" class="text-center text-sm text-red-600"></div>
+        </div>
+    </div>
+
+    <!-- PENTING: Memuat script sebagai module -->
+    <script type="module" src="js/login.js"></script>
+
+</body>
+</html>
