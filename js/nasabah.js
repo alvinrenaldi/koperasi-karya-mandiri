@@ -14,7 +14,7 @@ const userMenuButton = document.getElementById('user-menu-button');
 const userMenu = document.getElementById('user-menu');
 const userEmailDropdown = document.getElementById('user-email-dropdown');
 const logoutLinkDropdown = document.getElementById('logout-link-dropdown');
-const searchInput = document.getElementById('search-input'); // Elemen baru
+const searchInput = document.getElementById('search-input');
 
 // --- Elemen Modal Tambah/Edit ---
 const customerModal = document.getElementById('customer-modal');
@@ -33,12 +33,12 @@ const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 let editMode = false;
 let currentCustomerId = null;
 let customerIdToDelete = null;
-let allCustomersData = []; // Untuk menyimpan data asli dari Firestore
+let allCustomersData = [];
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
 
-// --- Logika Modal Tambah/Edit ---
+// --- Logika Modal ---
 const openModalForAdd = () => {
     editMode = false;
     currentCustomerId = null;
@@ -73,7 +73,6 @@ addCustomerBtn.addEventListener('click', openModalForAdd);
 closeModalBtn.addEventListener('click', closeModal);
 cancelModalBtn.addEventListener('click', closeModal);
 
-// --- Logika Modal Hapus ---
 const openDeleteModal = (id) => {
     customerIdToDelete = id;
     deleteConfirmModal.classList.remove('hidden');
@@ -101,7 +100,6 @@ confirmDeleteBtn.addEventListener('click', async () => {
     }
 });
 
-// --- Logika Form Submit (Tambah & Edit) ---
 customerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
@@ -130,8 +128,6 @@ customerForm.addEventListener('submit', async (e) => {
 });
 
 // --- Memuat dan Menampilkan Daftar Nasabah ---
-
-// Fungsi baru untuk me-render tabel dari array data
 const renderCustomerTable = (customersToRender) => {
     if (customersToRender.length === 0) {
         customerTableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">Nasabah tidak ditemukan.</td></tr>`;
@@ -141,9 +137,12 @@ const renderCustomerTable = (customersToRender) => {
     customersToRender.forEach(customer => {
         const row = `
             <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4"><div class="font-semibold text-gray-900">${customer.nama}</div><div class="text-sm text-gray-500">${customer.alamat}</div></td>
-                <td class="px-6 py-4 text-gray-700">${customer.telepon}</td>
+                <td class="px-6 py-4">
+                    <div class="font-semibold text-gray-900">${customer.nama}</div>
+                    <div class="text-sm text-gray-500">${customer.telepon}</div>
+                </td>
                 <td class="px-6 py-4 font-medium text-gray-800">${formatRupiah(customer.totalSisaTagihan)}</td>
+                <td class="px-6 py-4 text-gray-700">${customer.installmentText}</td>
                 <td class="px-6 py-4 text-sm space-x-2">
                     <a href="detail-nasabah.html?id=${customer.id}" class="font-medium text-indigo-600 hover:text-indigo-900">Detail</a>
                     <button data-id="${customer.id}" class="btn-edit font-medium text-blue-600 hover:text-blue-900">Edit</button>
@@ -162,14 +161,33 @@ const loadCustomers = () => {
             const customer = doc.data();
             const customerId = doc.id;
             let totalSisaTagihan = 0;
+            let totalInstallments = 0;
+            let paidInstallments = 0;
+
             const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId), where('status', '==', 'Aktif'));
             const loanSnapshot = await getDocs(loansQuery);
-            loanSnapshot.forEach(loanDoc => { totalSisaTagihan += loanDoc.data().sisaTagihan; });
-            return { id: customerId, ...customer, totalSisaTagihan };
+            
+            // Hitung total angsuran yang harus dibayar dari semua pinjaman aktif
+            loanSnapshot.forEach(loanDoc => {
+                const loanData = loanDoc.data();
+                totalSisaTagihan += loanData.sisaTagihan;
+                totalInstallments += loanData.jumlahAngsuran;
+            });
+
+            // Hitung total angsuran yang sudah dibayar
+            if (!loanSnapshot.empty) {
+                const paymentsQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'));
+                const paymentSnapshot = await getDocs(paymentsQuery);
+                paidInstallments = paymentSnapshot.size;
+            }
+
+            const remainingInstallments = totalInstallments - paidInstallments;
+            const installmentText = totalInstallments > 0 ? `${remainingInstallments} dari ${totalInstallments} kali` : '-';
+            
+            return { id: customerId, ...customer, totalSisaTagihan, installmentText };
         });
         allCustomersData = await Promise.all(customerPromises);
-        renderCustomerTable(allCustomersData); // Render tabel dengan data lengkap
-        // Pastikan search input juga me-render ulang data yang baru dimuat
+        renderCustomerTable(allCustomersData);
         searchInput.dispatchEvent(new Event('input'));
     });
 };
@@ -178,7 +196,7 @@ const loadCustomers = () => {
 searchInput.addEventListener('input', (e) => {
     const searchTerm = e.target.value.toLowerCase();
     if (searchTerm === '') {
-        renderCustomerTable(allCustomersData); // Jika kosong, tampilkan semua
+        renderCustomerTable(allCustomersData);
     } else {
         const filteredCustomers = allCustomersData.filter(customer =>
             customer.nama.toLowerCase().includes(searchTerm)
