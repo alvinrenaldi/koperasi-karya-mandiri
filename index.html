@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="css/style.css">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        #sidebar, #user-menu, .modal { transition: all 0.3s ease-in-out; }
+        #sidebar, #user-menu, .modal, #mobile-actions-menu { transition: all 0.3s ease-in-out; }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -30,14 +30,34 @@
         </aside>
 
         <div class="flex flex-col flex-1 overflow-y-auto">
-            <header class="flex items-center justify-between h-20 px-6 bg-white border-b">
+            <header class="flex items-center justify-between h-20 px-4 bg-white border-b md:px-6">
                 <div class="flex items-center">
                     <button id="hamburger-button" class="mr-4 text-gray-500 md:hidden focus:outline-none"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <h2 class="text-xl font-semibold text-gray-800">Dashboard</h2>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <button id="add-expense-btn" class="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-lg shadow-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">- Tambah Pengeluaran</button>
-                    <button id="add-deposit-btn" class="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">+ Tambah Modal</button>
+                <div class="flex items-center space-x-2 md:space-x-4">
+                    <!-- Tombol Desktop -->
+                    <div class="hidden md:flex md:space-x-4">
+                        <button id="add-expense-btn" class="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-lg shadow-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">- Tambah Pengeluaran</button>
+                        <button id="add-deposit-btn" class="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">+ Tambah Modal</button>
+                    </div>
+                    
+                    <!-- Tombol Aksi Mobile -->
+                    <div class="relative md:hidden">
+                        <button id="mobile-actions-button" class="p-2 text-gray-500 bg-gray-100 rounded-full hover:bg-gray-200 focus:outline-none">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        </button>
+                        <div id="mobile-actions-menu" class="absolute right-0 z-20 hidden w-48 py-1 mt-2 bg-white rounded-md shadow-xl">
+                            <a href="#" id="add-deposit-link-mobile" class="flex items-center w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100">
+                                <span class="text-green-600">+</span><span class="ml-2">Tambah Modal</span>
+                            </a>
+                            <a href="#" id="add-expense-link-mobile" class="flex items-center w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100">
+                                <span class="text-red-600">-</span><span class="ml-2">Tambah Pengeluaran</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Profil Dropdown -->
                     <div class="relative">
                         <button id="user-menu-button" class="relative z-10 block w-10 h-10 overflow-hidden border-2 border-gray-300 rounded-full shadow focus:outline-none focus:border-indigo-500"><img class="object-cover w-full h-full" src="https://ui-avatars.com/api/?name=User&background=6366f1&color=fff&bold=true" alt="Avatar Pengguna"></button>
                         <div id="user-menu" class="absolute right-0 z-20 hidden w-64 py-2 mt-2 bg-white rounded-md shadow-xl">
@@ -50,19 +70,17 @@
             </header>
 
             <main class="p-6">
-                <!-- Grid Kartu Harian -->
+                <!-- Konten dashboard tetap sama -->
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                     <div class="p-6 bg-blue-100 border border-blue-300 rounded-lg shadow-md"><h3 class="text-sm font-medium text-blue-800">Target Harian</h3><p id="target-harian" class="mt-2 text-3xl font-bold text-blue-700">Rp 0</p></div>
                     <div class="p-6 bg-green-100 border border-green-300 rounded-lg shadow-md"><h3 class="text-sm font-medium text-green-800">Pemasukan Hari Ini</h3><p id="pemasukan-hari-ini" class="mt-2 text-3xl font-bold text-green-700">Rp 0</p></div>
                     <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Nasabah Aktif</h3><p id="nasabah-aktif" class="mt-2 text-3xl font-bold text-gray-900">0</p></div>
                 </div>
-                <!-- Grid Kartu Keseluruhan -->
                 <div class="grid grid-cols-1 gap-6 mt-6 md:grid-cols-2 lg:grid-cols-3">
                     <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Kas Saat Ini</h3><p id="kas-saat-ini" class="mt-2 text-3xl font-bold text-gray-900">Rp 0</p></div>
                     <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Total Modal</h3><p id="total-modal" class="mt-2 text-3xl font-bold text-gray-900">Rp 0</p></div>
                     <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Total Sisa Tagihan</h3><p id="pinjaman-aktif" class="mt-2 text-3xl font-bold text-red-600">Rp 0</p></div>
                 </div>
-                 <!-- Kartu Keuntungan -->
                 <div class="p-6 mt-6 bg-white rounded-lg shadow-md">
                     <h3 class="text-sm font-medium text-gray-500">Keuntungan (Kas vs Modal)</h3>
                     <p id="total-keuntungan" class="mt-2 text-3xl font-bold text-gray-900">0%</p>
@@ -72,10 +90,8 @@
         <div id="sidebar-overlay" class="fixed inset-0 z-30 hidden bg-black bg-opacity-50 md:hidden"></div>
     </div>
 
-    <!-- Modal Tambah Modal (Deposito) -->
     <div id="add-deposit-modal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50"><div class="w-full max-w-lg p-6 bg-white rounded-lg shadow-xl"><h3 class="text-2xl font-semibold">Tambah Modal (Deposito)</h3><form id="add-deposit-form" class="mt-4 space-y-4"><div><label for="deposit-amount" class="block text-sm font-medium text-gray-700">Jumlah Deposit (Rp)</label><input type="text" inputmode="numeric" id="deposit-amount" required class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md"></div><div><label for="deposit-description" class="block text-sm font-medium text-gray-700">Keterangan</label><input type="text" id="deposit-description" placeholder="Contoh: Modal awal, Investasi, dll." required class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md"></div><div class="flex justify-end pt-4 space-x-2 border-t"><button type="button" id="cancel-deposit-btn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">Batal</button><button type="submit" class="px-4 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700">Simpan Deposit</button></div></form></div></div>
-
-    <!-- Modal Tambah Pengeluaran -->
+    
     <div id="add-expense-modal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50">
         <div class="w-full max-w-lg p-6 bg-white rounded-lg shadow-xl">
             <h3 class="text-2xl font-semibold">Tambah Pengeluaran Operasional</h3>

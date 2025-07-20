@@ -48,10 +48,19 @@ let currentLoanTrxId = null;
 let paymentEditMode = false;
 let currentPaymentTrxId = null;
 let trxToDelete = null;
+let loansMap = new Map(); // Cache untuk data pinjaman
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
-const formatDate = (timestamp) => timestamp ? timestamp.toDate().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+
+// PERBAIKAN: Fungsi formatDate dibuat lebih fleksibel
+const formatDate = (dateOrTimestamp) => {
+    if (!dateOrTimestamp) return '-';
+    // Jika objek memiliki metode .toDate(), itu adalah Firestore Timestamp. Jika tidak, anggap itu sudah objek Date.
+    const date = dateOrTimestamp.toDate ? dateOrTimestamp.toDate() : dateOrTimestamp;
+    return date.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+};
+
 const dateToYMD = (date) => date.toISOString().split('T')[0];
 const formatCurrencyInput = (inputElement) => {
     inputElement.addEventListener('keyup', (e) => {
@@ -98,7 +107,7 @@ const openLoanModal = async (loanId = null, trxId = null) => {
             loanDateInput.value = dateToYMD(loan.tanggalPinjam.toDate());
             loanAmountInput.value = loan.pokokPinjaman;
             document.getElementById('loan-installments').value = loan.jumlahAngsuran;
-            formatCurrencyInput(loanAmountInput); // Terapkan format saat edit
+            formatCurrencyInput(loanAmountInput);
         }
     } else {
         loanModalTitle.textContent = "Beri Pinjaman Baru";
@@ -114,25 +123,21 @@ const openPaymentModal = async (trxId = null) => {
     currentPaymentTrxId = trxId;
     addPaymentForm.reset();
 
-    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', customerId));
-    const loanSnapshot = await getDocs(loansQuery);
     paymentLoanSelect.innerHTML = '';
-    const loansMap = new Map();
-    loanSnapshot.forEach(doc => {
-        loansMap.set(doc.id, doc.data());
-        const loan = doc.data();
-        const option = document.createElement('option');
-        option.value = doc.id;
-        option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
-        paymentLoanSelect.appendChild(option);
-    });
-
+    
     if (paymentEditMode) {
         paymentModalTitle.textContent = "Edit Catatan Pembayaran";
         const trxRef = doc(db, 'transactions', trxId);
         const trxSnap = await getDoc(trxRef);
         if (trxSnap.exists()) {
             const trx = trxSnap.data();
+            const loanData = loansMap.get(trx.loanId);
+            if (loanData) {
+                const option = document.createElement('option');
+                option.value = trx.loanId;
+                option.textContent = `Pinjaman ${formatRupiah(loanData.pokokPinjaman)} - ${formatDate(loanData.tanggalPinjam)}`;
+                paymentLoanSelect.appendChild(option);
+            }
             paymentAmountInput.value = trx.jumlah;
             formatCurrencyInput(paymentAmountInput);
             paymentDateInput.value = dateToYMD(trx.tanggalTransaksi.toDate());
@@ -143,15 +148,19 @@ const openPaymentModal = async (trxId = null) => {
         paymentModalTitle.textContent = "Catat Pembayaran Angsuran";
         paymentDateInput.value = dateToYMD(new Date());
         paymentLoanSelect.disabled = false;
-        paymentLoanSelect.innerHTML = '';
-        loanSnapshot.docs.filter(doc => loansMap.get(doc.id).status === 'Aktif').forEach(doc => {
-             const loan = doc.data();
-             const option = document.createElement('option');
-             option.value = doc.id;
-             option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
-             paymentLoanSelect.appendChild(option);
+        
+        let hasActiveLoan = false;
+        loansMap.forEach((loan, loanId) => {
+            if (loan.status === 'Aktif') {
+                const option = document.createElement('option');
+                option.value = loanId;
+                option.textContent = `Pinjaman ${formatRupiah(loan.pokokPinjaman)} - ${formatDate(loan.tanggalPinjam)}`;
+                paymentLoanSelect.appendChild(option);
+                hasActiveLoan = true;
+            }
         });
-        if(paymentLoanSelect.innerHTML === ''){
+
+        if (!hasActiveLoan) {
             alert("Tidak ada pinjaman aktif yang bisa dibayar.");
             return;
         }
@@ -230,12 +239,43 @@ const loadCustomerData = (id) => {
         } else { alert("Data nasabah tidak ditemukan."); }
     });
 
+    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', id));
+    onSnapshot(loansQuery, (snapshot) => {
+        let totalTagihan = 0, totalSisaTagihan = 0;
+        loansMap.clear();
+        snapshot.forEach(doc => {
+            const loan = doc.data();
+            loansMap.set(doc.id, { ...loan, tanggalPinjam: loan.tanggalPinjam.toDate() }); // Simpan sebagai Date object
+            totalTagihan += loan.totalTagihan;
+            if(loan.status === 'Aktif') totalSisaTagihan += loan.sisaTagihan;
+        });
+        summaryTotalPinjaman.textContent = formatRupiah(totalTagihan);
+        summarySisaTagihan.textContent = formatRupiah(totalSisaTagihan);
+
+        if (totalSisaTagihan > 0) {
+            addLoanBtn.disabled = true;
+            addLoanBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            addLoanBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+        } else {
+            addLoanBtn.disabled = false;
+            addLoanBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            addLoanBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+        }
+    });
+
     const transactionsQuery = query(collection(db, 'transactions'), where('customerId', '==', id), orderBy('tanggalTransaksi', 'desc'));
     onSnapshot(transactionsQuery, (snapshot) => {
         transactionHistoryBody.innerHTML = snapshot.empty ? `<tr><td colspan="5" class="p-6 text-center text-gray-500">Belum ada riwayat transaksi.</td></tr>` : '';
         snapshot.forEach(doc => {
             const trx = doc.data();
             const trxId = doc.id;
+            let keteranganDinamis = trx.keterangan || '-';
+
+            if (trx.tipe === 'Angsuran' && loansMap.has(trx.loanId)) {
+                const relatedLoan = loansMap.get(trx.loanId);
+                keteranganDinamis = `Pembayaran angsuran ${formatDate(relatedLoan.tanggalPinjam)}`;
+            }
+
             const actionButtons = `
                 <td class="px-6 py-4 text-sm space-x-2">
                     <button data-id="${trxId}" data-loanid="${trx.loanId}" data-type="${trx.tipe}" class="btn-edit-trx font-medium text-blue-600 hover:text-blue-900">Edit</button>
@@ -243,20 +283,8 @@ const loadCustomerData = (id) => {
                 </td>
             `;
             const rowClass = trx.tipe === 'Pinjaman Baru' ? 'bg-red-50' : (trx.tipe === 'Angsuran' ? 'bg-green-50' : 'bg-blue-50');
-            transactionHistoryBody.innerHTML += `<tr class="${rowClass}"><td class="px-6 py-4">${formatDate(trx.tanggalTransaksi)}</td><td class="px-6 py-4 font-medium">${trx.tipe}</td><td class="px-6 py-4">${formatRupiah(trx.jumlah)}</td><td class="px-6 py-4 text-sm text-gray-600">${trx.keterangan || '-'}</td>${actionButtons}</tr>`;
+            transactionHistoryBody.innerHTML += `<tr class="${rowClass}"><td class="px-6 py-4">${formatDate(trx.tanggalTransaksi)}</td><td class="px-6 py-4 font-medium">${trx.tipe}</td><td class="px-6 py-4">${formatRupiah(trx.jumlah)}</td><td class="px-6 py-4 text-sm text-gray-600">${keteranganDinamis}</td>${actionButtons}</tr>`;
         });
-    });
-
-    const loansQuery = query(collection(db, 'loans'), where('customerId', '==', id));
-    onSnapshot(loansQuery, (snapshot) => {
-        let totalTagihan = 0, totalSisaTagihan = 0;
-        snapshot.forEach(doc => {
-            const loan = doc.data();
-            totalTagihan += loan.totalTagihan;
-            if(loan.status === 'Aktif') totalSisaTagihan += loan.sisaTagihan;
-        });
-        summaryTotalPinjaman.textContent = formatRupiah(totalTagihan);
-        summarySisaTagihan.textContent = formatRupiah(totalSisaTagihan);
     });
 };
 
@@ -275,36 +303,24 @@ addLoanForm.addEventListener('submit', async (e) => {
     const batch = writeBatch(db);
 
     if (loanEditMode) {
-        // Logika Edit Pinjaman
         const loanRef = doc(db, 'loans', currentLoanId);
         const trxRef = doc(db, 'transactions', currentLoanTrxId);
         const loanSnap = await getDoc(loanRef);
         if(!loanSnap.exists()) throw new Error("Pinjaman tidak ditemukan!");
-
         const sudahDibayar = loanSnap.data().totalTagihan - loanSnap.data().sisaTagihan;
         const newSisaTagihan = totalTagihan - sudahDibayar;
-        
         batch.update(loanRef, { pokokPinjaman, bunga, totalTagihan, sisaTagihan: newSisaTagihan, jumlahAngsuran: angsuran, tanggalPinjam: transactionDate });
         batch.update(trxRef, { jumlah: pokokPinjaman, keterangan: `Pinjaman Pokok ${formatRupiah(pokokPinjaman)} + Bunga ${formatRupiah(bunga)}`, tanggalTransaksi: transactionDate });
-
-        try {
-            await batch.commit();
-            alert("Pinjaman berhasil diperbarui!");
-        } catch (error) { console.error("Error memperbarui pinjaman: ", error); alert("Gagal memperbarui pinjaman."); }
-
+        try { await batch.commit(); alert("Pinjaman berhasil diperbarui!"); } 
+        catch (error) { console.error("Error memperbarui pinjaman: ", error); alert("Gagal memperbarui pinjaman."); }
     } else {
-        // Logika Tambah Pinjaman Baru
         const loanRef = doc(collection(db, 'loans'));
         batch.set(loanRef, { customerId, pokokPinjaman, bunga, totalTagihan, sisaTagihan: totalTagihan, jumlahAngsuran: angsuran, status: 'Aktif', tanggalPinjam: transactionDate });
         const transactionRef = doc(collection(db, 'transactions'));
         batch.set(transactionRef, { customerId, loanId: loanRef.id, jumlah: pokokPinjaman, tipe: 'Pinjaman Baru', keterangan: `Pinjaman Pokok ${formatRupiah(pokokPinjaman)} + Bunga ${formatRupiah(bunga)}`, tanggalTransaksi: transactionDate });
-        
-        try {
-            await batch.commit();
-            alert("Pinjaman baru berhasil ditambahkan!");
-        } catch (error) { console.error("Error menambah pinjaman: ", error); alert("Gagal menambah pinjaman."); }
+        try { await batch.commit(); alert("Pinjaman baru berhasil ditambahkan!"); } 
+        catch (error) { console.error("Error menambah pinjaman: ", error); alert("Gagal menambah pinjaman."); }
     }
-    
     addLoanForm.reset();
     addLoanModal.classList.add('hidden');
 });
@@ -318,6 +334,8 @@ addPaymentForm.addEventListener('submit', async (e) => {
     const transactionDate = Timestamp.fromDate(new Date(paymentDateString));
     const batch = writeBatch(db);
     const loanRef = doc(db, 'loans', selectedLoanId);
+    const relatedLoan = loansMap.get(selectedLoanId);
+    const keteranganDinamis = `Pembayaran angsuran ${formatDate(relatedLoan.tanggalPinjam)}`;
 
     try {
         if (paymentEditMode) {
@@ -329,7 +347,7 @@ addPaymentForm.addEventListener('submit', async (e) => {
             const selisih = jumlahBaru - jumlahLama;
             const sisaTagihanBaru = loanSnap.data().sisaTagihan - selisih;
             batch.update(loanRef, { sisaTagihan: sisaTagihanBaru, status: sisaTagihanBaru <= 0 ? 'Lunas' : 'Aktif' });
-            batch.update(trxRef, { jumlah: jumlahBaru, tanggalTransaksi: transactionDate });
+            batch.update(trxRef, { jumlah: jumlahBaru, tanggalTransaksi: transactionDate, keterangan: keteranganDinamis });
             await batch.commit();
             alert("Pembayaran berhasil diperbarui!");
         } else {
@@ -338,7 +356,7 @@ addPaymentForm.addEventListener('submit', async (e) => {
             const sisaTagihanBaru = loanSnap.data().sisaTagihan - jumlahBaru;
             batch.update(loanRef, { sisaTagihan: sisaTagihanBaru, status: sisaTagihanBaru <= 0 ? 'Lunas' : 'Aktif' });
             const trxRef = doc(collection(db, 'transactions'));
-            batch.set(trxRef, { customerId, loanId: selectedLoanId, jumlah: jumlahBaru, tipe: 'Angsuran', keterangan: `Pembayaran angsuran`, tanggalTransaksi: transactionDate });
+            batch.set(trxRef, { customerId, loanId: selectedLoanId, jumlah: jumlahBaru, tipe: 'Angsuran', keterangan: keteranganDinamis, tanggalTransaksi: transactionDate });
             await batch.commit();
             alert("Pembayaran berhasil dicatat!");
         }

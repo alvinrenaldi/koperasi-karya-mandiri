@@ -178,7 +178,6 @@ const updateDisplay = () => {
         customer.nama.toLowerCase().includes(searchTerm)
     );
 
-    // Sorting logic
     switch (sortValue) {
         case 'alamat-asc':
             filteredData.sort((a, b) => a.alamat.localeCompare(b.alamat));
@@ -220,46 +219,43 @@ const loadCustomers = () => {
 
             let totalSisaTagihan = 0, totalPokokPinjaman = 0, totalInstallments = 0, paidInstallments = 0;
             let paymentStatus = 'lunas';
-            let displayLoanDate = new Date(0); // Tanggal yang akan ditampilkan di tabel
+            let displayLoanDate = new Date(0);
 
             if (!activeLoanSnapshot.empty) {
-                // Tentukan tanggal pinjaman yang relevan (paling lama yang masih aktif)
-                let oldestActiveLoanDate = new Date();
-                activeLoanSnapshot.forEach(loanDoc => {
-                    const loanData = loanDoc.data();
-                    totalSisaTagihan += loanData.sisaTagihan;
-                    totalPokokPinjaman += loanData.pokokPinjaman;
-                    totalInstallments += loanData.jumlahAngsuran;
-                    if (loanData.tanggalPinjam.toDate() < oldestActiveLoanDate) {
-                        oldestActiveLoanDate = loanData.tanggalPinjam.toDate();
-                    }
-                });
-                displayLoanDate = oldestActiveLoanDate;
+                const activeLoanDoc = activeLoanSnapshot.docs[0]; // Asumsi hanya ada 1 pinjaman aktif
+                const activeLoanData = activeLoanDoc.data();
+                const activeLoanId = activeLoanDoc.id;
 
-                // --- LOGIKA PEWARNAAN BARU ---
+                totalSisaTagihan = activeLoanData.sisaTagihan;
+                totalPokokPinjaman = activeLoanData.pokokPinjaman;
+                totalInstallments = activeLoanData.jumlahAngsuran;
+                displayLoanDate = activeLoanData.tanggalPinjam.toDate();
+
+                // --- PERBAIKAN LOGIKA HITUNG ANGSURAN ---
+                // Hitung angsuran yang sudah dibayar HANYA untuk pinjaman yang aktif
+                const paymentsForActiveLoanQuery = query(collection(db, 'transactions'), where('loanId', '==', activeLoanId), where('tipe', '==', 'Angsuran'));
+                const paymentSnapshot = await getDocs(paymentsForActiveLoanQuery);
+                paidInstallments = paymentSnapshot.size;
+
+                // --- Logika Pewarnaan ---
                 const paymentsTodayQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'), where('tanggalTransaksi', '>=', Timestamp.fromDate(startOfToday)), where('tanggalTransaksi', '<=', Timestamp.fromDate(endOfToday)));
                 const paymentTodaySnapshot = await getDocs(paymentsTodayQuery);
 
                 if (!paymentTodaySnapshot.empty) {
-                    paymentStatus = 'paid'; // HIJAU: Prioritas utama, sudah bayar hari ini.
+                    paymentStatus = 'paid';
                 } else {
                     const isNewLoanToday = displayLoanDate >= startOfToday && displayLoanDate <= endOfToday;
                     if (isNewLoanToday) {
-                        paymentStatus = 'new_loan'; // KUNING: Pinjaman baru, belum ada kewajiban bayar.
+                        paymentStatus = 'new_loan';
                     } else {
-                        paymentStatus = 'due'; // MERAH: Pinjaman lama, sudah jatuh tempo hari ini.
+                        paymentStatus = 'due';
                     }
                 }
-
-                const allPaymentsQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'));
-                const allPaymentsSnapshot = await getDocs(allPaymentsQuery);
-                paidInstallments = allPaymentsSnapshot.size;
             }
 
             const remainingInstallments = totalInstallments - paidInstallments;
             const installmentText = totalInstallments > 0 ? `${remainingInstallments} dari ${totalInstallments} kali` : '-';
             
-            // Menggunakan displayLoanDate untuk sorting dan tampilan
             return { id: customerId, ...customer, totalSisaTagihan, totalPokokPinjaman, installmentText, loanCountText, paymentStatus, displayLoanDate };
         });
         allCustomersData = await Promise.all(customerPromises);
@@ -267,16 +263,13 @@ const loadCustomers = () => {
     });
 };
 
-// --- Event Listeners ---
+// --- Event Listeners & Auth Guard ---
 searchInput.addEventListener('input', updateDisplay);
 sortSelect.addEventListener('change', updateDisplay);
-
 customerTableBody.addEventListener('click', (e) => {
     if (e.target.classList.contains('btn-edit')) { openModalForEdit(e.target.dataset.id); }
     if (e.target.classList.contains('btn-delete')) { openDeleteModal(e.target.dataset.id); }
 });
-
-// --- Auth Guard & Inisialisasi ---
 onAuthStateChanged(auth, (user) => {
     if (user) {
         userEmailDropdown.textContent = user.email;
@@ -285,8 +278,6 @@ onAuthStateChanged(auth, (user) => {
         window.location.href = 'login.html';
     }
 });
-
-// --- Logika Umum ---
 const handleLogout = (e) => { if (e) e.preventDefault(); signOut(auth).catch((error) => console.error("Error saat logout:", error)); };
 logoutButton.addEventListener('click', handleLogout);
 logoutLinkDropdown.addEventListener('click', handleLogout);

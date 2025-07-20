@@ -28,12 +28,18 @@ const cancelDepositBtn = document.getElementById('cancel-deposit-btn');
 const addDepositForm = document.getElementById('add-deposit-form');
 const depositAmountInput = document.getElementById('deposit-amount');
 
-// Elemen Modal Pengeluaran Baru
+// Elemen Modal Pengeluaran
 const addExpenseBtn = document.getElementById('add-expense-btn');
 const addExpenseModal = document.getElementById('add-expense-modal');
 const cancelExpenseBtn = document.getElementById('cancel-expense-btn');
 const addExpenseForm = document.getElementById('add-expense-form');
 const expenseAmountInput = document.getElementById('expense-amount');
+
+// Elemen Aksi Mobile
+const mobileActionsButton = document.getElementById('mobile-actions-button');
+const mobileActionsMenu = document.getElementById('mobile-actions-menu');
+const addDepositLinkMobile = document.getElementById('add-deposit-link-mobile');
+const addExpenseLinkMobile = document.getElementById('add-expense-link-mobile');
 
 // --- Fungsi Utilitas ---
 const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
@@ -56,10 +62,18 @@ const parseCurrencyValue = (formattedValue) => {
 };
 
 // --- Logika Modal ---
-addDepositBtn.addEventListener('click', () => addDepositModal.classList.remove('hidden'));
-cancelDepositBtn.addEventListener('click', () => addDepositModal.classList.add('hidden'));
-addExpenseBtn.addEventListener('click', () => addExpenseModal.classList.remove('hidden'));
-cancelExpenseBtn.addEventListener('click', () => addExpenseModal.classList.add('hidden'));
+const openDepositModal = () => addDepositModal.classList.remove('hidden');
+const closeDepositModal = () => addDepositModal.classList.add('hidden');
+const openExpenseModal = () => addExpenseModal.classList.remove('hidden');
+const closeExpenseModal = () => addExpenseModal.classList.add('hidden');
+
+addDepositBtn.addEventListener('click', openDepositModal);
+addDepositLinkMobile.addEventListener('click', openDepositModal);
+cancelDepositBtn.addEventListener('click', closeDepositModal);
+
+addExpenseBtn.addEventListener('click', openExpenseModal);
+addExpenseLinkMobile.addEventListener('click', openExpenseModal);
+cancelExpenseBtn.addEventListener('click', closeExpenseModal);
 
 addDepositForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -72,7 +86,7 @@ addDepositForm.addEventListener('submit', async (e) => {
         await addDoc(collection(db, 'transactions'), { tipe: 'Deposito', jumlah: amount, keterangan: description, tanggalTransaksi: serverTimestamp() });
         alert("Deposit berhasil ditambahkan!");
         addDepositForm.reset();
-        addDepositModal.classList.add('hidden');
+        closeDepositModal();
     } catch (error) {
         console.error("Gagal menambahkan deposit:", error);
         alert("Gagal menambahkan deposit.");
@@ -92,7 +106,7 @@ addExpenseForm.addEventListener('submit', async (e) => {
         await addDoc(collection(db, 'transactions'), { tipe: 'Operasional', jumlah: amount, keterangan: description, tanggalTransaksi: serverTimestamp() });
         alert("Pengeluaran berhasil dicatat!");
         addExpenseForm.reset();
-        addExpenseModal.classList.add('hidden');
+        closeExpenseModal();
     } catch (error) {
         console.error("Gagal mencatat pengeluaran:", error);
         alert("Gagal mencatat pengeluaran.");
@@ -101,12 +115,10 @@ addExpenseForm.addEventListener('submit', async (e) => {
     }
 });
 
-
 const loadDashboardData = () => {
     const setLoading = (el) => el.textContent = 'Memuat...';
     setLoading(kasSaatIniEl); setLoading(pinjamanAktifEl); setLoading(nasabahAktifEl); setLoading(totalModalEl); setLoading(totalKeuntunganEl); setLoading(targetHarianEl); setLoading(pemasukanHariIniEl);
 
-    // Kalkulasi dari Transaksi (Kas, Modal, Pemasukan Hari Ini)
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0));
     const endOfToday = new Date(today.setHours(23, 59, 59, 999));
@@ -144,7 +156,6 @@ const loadDashboardData = () => {
         totalKeuntunganEl.classList.add(keuntunganNominal < 0 ? 'text-red-700' : 'text-green-700');
     });
 
-    // Kalkulasi dari Pinjaman (Target Harian, Sisa Tagihan, Nasabah Aktif)
     onSnapshot(query(collection(db, 'loans'), where('status', '==', 'Aktif')), (snapshot) => {
         let totalSisaTagihan = 0, targetHarian = 0;
         const activeCustomerIds = new Set();
@@ -167,7 +178,7 @@ onAuthStateChanged(auth, (user) => {
         userEmailDropdown.textContent = user.email;
         loadDashboardData();
         formatCurrencyInput(depositAmountInput);
-        formatCurrencyInput(expenseAmountInput); // Terapkan format ke input pengeluaran
+        formatCurrencyInput(expenseAmountInput);
     } else { window.location.href = 'login.html'; }
 });
 
@@ -175,7 +186,11 @@ const handleLogout = (e) => { if (e) e.preventDefault(); signOut(auth).catch((er
 logoutButton.addEventListener('click', handleLogout);
 logoutLinkDropdown.addEventListener('click', handleLogout);
 userMenuButton.addEventListener('click', () => userMenu.classList.toggle('hidden'));
-window.addEventListener('click', (e) => { if (!userMenuButton.contains(e.target) && !userMenu.contains(e.target)) { userMenu.classList.add('hidden'); } });
+mobileActionsButton.addEventListener('click', () => mobileActionsMenu.classList.toggle('hidden'));
+window.addEventListener('click', (e) => {
+    if (!userMenuButton.contains(e.target) && !userMenu.contains(e.target)) { userMenu.classList.add('hidden'); }
+    if (!mobileActionsButton.contains(e.target) && !mobileActionsMenu.contains(e.target)) { mobileActionsMenu.classList.add('hidden'); }
+});
 const toggleSidebar = () => { sidebar.classList.toggle('-translate-x-full'); sidebarOverlay.classList.toggle('hidden'); };
 hamburgerButton.addEventListener('click', toggleSidebar);
 sidebarOverlay.addEventListener('click', toggleSidebar);
