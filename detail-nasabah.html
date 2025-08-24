@@ -16,7 +16,6 @@
 </head>
 <body class="bg-gray-100">
     <div class="flex h-screen bg-gray-200">
-        <!-- Sidebar -->
         <aside id="sidebar" class="fixed top-0 left-0 z-40 w-64 h-screen bg-white shadow-xl md:relative md:translate-x-0 -translate-x-full">
             <div class="flex flex-col h-full">
                 <div class="flex items-center justify-center h-20 border-b"><h1 class="text-2xl font-bold text-indigo-600">Karya Mandiri</h1></div>
@@ -48,14 +47,22 @@
                 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                     <div class="p-6 bg-white rounded-lg shadow-md lg:col-span-1"><h3 class="text-lg font-semibold text-gray-800">Profil Nasabah</h3><div id="customer-profile-info" class="mt-4 space-y-2 text-gray-600"><p>Memuat profil...</p></div></div>
                     <div class="space-y-6 lg:col-span-2">
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                             <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Total Tagihan (Pokok+Bunga)</h3><p id="summary-total-pinjaman" class="mt-2 text-3xl font-bold text-gray-900">Rp 0</p></div>
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                            <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Total Tagihan (Pokok+Bunga)</h3><p id="summary-total-pinjaman" class="mt-2 text-3xl font-bold text-gray-900">Rp 0</p></div>
                             <div class="p-6 bg-white rounded-lg shadow-md"><h3 class="text-sm font-medium text-gray-500">Sirkulasi</h3><p id="summary-sisa-tagihan" class="mt-2 text-3xl font-bold text-red-600">Rp 0</p></div>
+                            <div class="p-6 bg-yellow-100 border border-yellow-300 rounded-lg shadow-md">
+                                <h3 class="text-sm font-medium text-yellow-800">Jumlah Tabungan</h3>
+                                <p id="summary-tabungan" class="mt-2 text-3xl font-bold text-yellow-700">Rp 0</p>
+                            </div>
                         </div>
-                        <div class="flex flex-col gap-4 sm:flex-row"><button id="add-loan-btn" class="w-full px-4 py-3 font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700">+ Beri Pinjaman Baru</button><button id="add-payment-btn" class="w-full px-4 py-3 font-semibold text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700">+ Catat Pembayaran</button></div>
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                            <button id="add-loan-btn" class="w-full px-4 py-3 font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700">+ Beri Pinjaman Baru</button>
+                            <button id="add-payment-btn" class="w-full px-4 py-3 font-semibold text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700">+ Catat Pembayaran</button>
+                            <button id="withdraw-savings-btn" class="w-full px-4 py-3 font-semibold text-white bg-yellow-600 rounded-lg shadow-md hover:bg-yellow-700">- Cairkan Tabungan</button>
+                        </div>
                     </div>
                 </div>
-                <div class="mt-8"><h3 class="mb-4 text-xl font-semibold text-gray-800">Riwayat Transaksi</h3><div class="overflow-x-auto bg-white rounded-lg shadow"><table class="w-full whitespace-nowrap"><thead class="bg-gray-50"><tr class="text-sm font-semibold text-left text-gray-600 border-b"><th class="px-6 py-3">Tanggal</th><th class="px-6 py-3">Jenis Transaksi</th><th class="px-6 py-3">Jumlah</th><th class="px-6 py-3">Keterangan</th><th class="px-6 py-3">Aksi</th></tr></thead><tbody id="transaction-history-body" class="divide-y"><tr><td colspan="5" class="p-6 text-center text-gray-500">Memuat riwayat transaksi...</td></tr></tbody></table></div></div>
+                <div class="mt-8"><h3 class="mb-4 text-xl font-semibold text-gray-800">Riwayat Transaksi</h3><div class="overflow-x-auto bg-white rounded-lg shadow"><table class="w-full whitespace-nowrap"><thead class="bg-gray-50"><tr class="text-sm font-semibold text-left text-gray-600 border-b"><th class="px-6 py-3">Tanggal</th><th class="px-6 py-3">Jenis Transaksi</th><th class="px-6 py-3">Jumlah</th><th class="px-6 py-3">Keterangan</th><th class="px-6 py-3">Aksi</th></tr></thead><tbody id="transaction-history-body"><tr><td colspan="5" class="p-6 text-center text-gray-500">Memuat riwayat transaksi...</td></tr></tbody></table></div></div>
             </main>
         </div>
         <div id="sidebar-overlay" class="fixed inset-0 z-30 hidden bg-black bg-opacity-50 md:hidden"></div>
@@ -93,6 +100,17 @@
             <div class="flex justify-end mt-6 space-x-2">
                 <button id="cancel-delete-trx-btn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">Batal</button>
                 <button id="confirm-delete-trx-btn" class="px-4 py-2 font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">Ya, Hapus</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="withdraw-confirm-modal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50">
+        <div class="w-full max-w-md p-6 bg-white rounded-lg shadow-xl">
+            <h3 class="text-lg font-semibold">Konfirmasi Pencairan Tabungan</h3>
+            <p class="mt-2 text-gray-600">Anda akan mencairkan seluruh tabungan nasabah sebesar <strong id="withdraw-amount-text">Rp 0</strong>. Saldo tabungan akan menjadi nol. Tindakan ini tidak dapat dibatalkan.</p>
+            <div class="flex justify-end mt-6 space-x-2">
+                <button id="cancel-withdraw-btn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">Batal</button>
+                <button id="confirm-withdraw-btn" class="px-4 py-2 font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Ya, Cairkan</button>
             </div>
         </div>
     </div>

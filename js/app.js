@@ -20,6 +20,7 @@ const totalModalEl = document.getElementById('total-modal');
 const totalKeuntunganEl = document.getElementById('total-keuntungan');
 const targetHarianEl = document.getElementById('target-harian');
 const pemasukanHariIniEl = document.getElementById('pemasukan-hari-ini');
+const totalTabunganEl = document.getElementById('total-tabungan-nasabah'); // [BARU]
 
 // Elemen Modal Deposito
 const addDepositBtn = document.getElementById('add-deposit-btn');
@@ -117,31 +118,37 @@ addExpenseForm.addEventListener('submit', async (e) => {
 
 const loadDashboardData = () => {
     const setLoading = (el) => el.textContent = 'Memuat...';
-    setLoading(kasSaatIniEl); setLoading(pinjamanAktifEl); setLoading(nasabahAktifEl); setLoading(totalModalEl); setLoading(totalKeuntunganEl); setLoading(targetHarianEl); setLoading(pemasukanHariIniEl);
+    setLoading(kasSaatIniEl); setLoading(pinjamanAktifEl); setLoading(nasabahAktifEl); setLoading(totalModalEl); setLoading(totalKeuntunganEl); setLoading(targetHarianEl); setLoading(pemasukanHariIniEl); setLoading(totalTabunganEl);
 
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0));
     const endOfToday = new Date(today.setHours(23, 59, 59, 999));
 
     onSnapshot(collection(db, 'transactions'), (snapshot) => {
-        let totalPinjamanBaru = 0, totalAngsuran = 0, totalModal = 0, pemasukanHariIni = 0, totalOperasional = 0;
+        let totalPinjamanBaru = 0, totalAngsuran = 0, totalModal = 0, pemasukanHariIni = 0, totalOperasional = 0, totalPencairanTabungan = 0;
         snapshot.forEach(doc => {
             const trx = doc.data();
             const trxDate = trx.tanggalTransaksi.toDate();
             if (trx.tipe === 'Pinjaman Baru') {
                 totalPinjamanBaru += trx.jumlah;
             } else if (trx.tipe === 'Angsuran') {
-                totalAngsuran += trx.jumlah;
-                if (trxDate >= startOfToday && trxDate <= endOfToday) {
-                    pemasukanHariIni += trx.jumlah;
+                // Hanya angsuran yang bukan setoran tabungan yang dihitung sebagai pemasukan kas
+                if (!trx.keterangan.includes("(Masuk ke Tabungan)")) {
+                    totalAngsuran += trx.jumlah;
+                    if (trxDate >= startOfToday && trxDate <= endOfToday) {
+                        pemasukanHariIni += trx.jumlah;
+                    }
                 }
             } else if (trx.tipe === 'Deposito') {
                 totalModal += trx.jumlah;
             } else if (trx.tipe === 'Operasional') {
                 totalOperasional += trx.jumlah;
+            } else if (trx.tipe === 'Pencairan Tabungan') { // [BARU]
+                totalPencairanTabungan += trx.jumlah;
             }
         });
-        const kasSaatIni = totalModal + totalAngsuran - totalPinjamanBaru - totalOperasional;
+        // [DIUBAH] Perhitungan kas kini mengeluarkan pencairan tabungan
+        const kasSaatIni = totalModal + totalAngsuran - totalPinjamanBaru - totalOperasional - totalPencairanTabungan;
         totalModalEl.textContent = formatRupiah(totalModal);
         kasSaatIniEl.textContent = formatRupiah(kasSaatIni);
         pemasukanHariIniEl.textContent = formatRupiah(pemasukanHariIni);
@@ -158,17 +165,27 @@ const loadDashboardData = () => {
 
     onSnapshot(query(collection(db, 'loans'), where('status', '==', 'Aktif')), (snapshot) => {
         let totalSisaTagihan = 0, targetHarian = 0;
-        const activeCustomerIds = new Set();
         snapshot.forEach(doc => {
             const loan = doc.data();
             totalSisaTagihan += loan.sisaTagihan;
             if (loan.jumlahAngsuran > 0) {
                 targetHarian += loan.totalTagihan / loan.jumlahAngsuran;
             }
-            activeCustomerIds.add(loan.customerId);
         });
         pinjamanAktifEl.textContent = formatRupiah(totalSisaTagihan);
         targetHarianEl.textContent = formatRupiah(targetHarian);
+    });
+
+    // --- [BARU] Listener untuk menghitung total tabungan dari semua nasabah ---
+    onSnapshot(query(collection(db, 'customers'), where('status', '==', 'Aktif')), (snapshot) => {
+        let totalTabungan = 0;
+        const activeCustomerIds = new Set();
+        snapshot.forEach(doc => {
+            const customer = doc.data();
+            totalTabungan += customer.tabungan || 0; // Menjumlahkan field tabungan
+            activeCustomerIds.add(doc.id);
+        });
+        totalTabunganEl.textContent = formatRupiah(totalTabungan);
         nasabahAktifEl.textContent = activeCustomerIds.size;
     });
 };

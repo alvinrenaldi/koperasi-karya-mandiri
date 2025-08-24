@@ -120,7 +120,8 @@ customerForm.addEventListener('submit', async (e) => {
             const customerRef = doc(db, 'customers', currentCustomerId);
             await updateDoc(customerRef, customerData);
         } else {
-            await addDoc(collection(db, 'customers'), { ...customerData, status: 'Aktif', dibuatPada: serverTimestamp() });
+            // [DIUBAH] Saat nasabah baru dibuat, tambahkan field tabungan dengan nilai 0
+            await addDoc(collection(db, 'customers'), { ...customerData, tabungan: 0, status: 'Aktif', dibuatPada: serverTimestamp() });
         }
         closeModal();
     } catch (error) {
@@ -135,18 +136,18 @@ customerForm.addEventListener('submit', async (e) => {
 // --- Logika Tampilan (Filter, Sort, Render) ---
 const renderCustomerTable = (customersToRender) => {
     if (customersToRender.length === 0) {
-        customerTableBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-500">Nasabah tidak ditemukan.</td></tr>`;
+        customerTableBody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-gray-500">Nasabah tidak ditemukan.</td></tr>`;
         return;
     }
     customerTableBody.innerHTML = '';
     customersToRender.forEach(customer => {
-        let rowClass = 'bg-white'; // Default putih (lunas)
+        let rowClass = 'bg-white';
         if (customer.paymentStatus === 'paid') {
-            rowClass = 'bg-green-100'; // Hijau
+            rowClass = 'bg-green-100';
         } else if (customer.paymentStatus === 'due') {
-            rowClass = 'bg-red-100'; // Merah
+            rowClass = 'bg-red-100';
         } else if (customer.paymentStatus === 'new_loan') {
-            rowClass = 'bg-yellow-100'; // Kuning
+            rowClass = 'bg-yellow-100';
         }
 
         const row = `
@@ -160,6 +161,7 @@ const renderCustomerTable = (customersToRender) => {
                 <td class="px-6 py-4 font-medium text-gray-800">${formatRupiah(customer.totalPokokPinjaman)}</td>
                 <td class="px-6 py-4 font-medium text-gray-800">${formatRupiah(customer.totalSisaTagihan)}</td>
                 <td class="px-6 py-4 text-gray-700">${customer.installmentText}</td>
+                                <td class="px-6 py-4 font-bold text-yellow-800">${formatRupiah(customer.tabungan || 0)}</td>
                 <td class="px-6 py-4 text-sm space-x-2">
                     <a href="detail-nasabah.html?id=${customer.id}" class="font-medium text-indigo-600 hover:text-indigo-900">Detail</a>
                     <button data-id="${customer.id}" class="btn-edit font-medium text-blue-600 hover:text-blue-900">Edit</button>
@@ -199,7 +201,7 @@ const updateDisplay = () => {
 const loadCustomers = () => {
     const q = query(collection(db, 'customers'), where('status', '==', 'Aktif'));
     onSnapshot(q, async (snapshot) => {
-        customerTableBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-500">Memproses data...</td></tr>`;
+        customerTableBody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-gray-500">Memproses data...</td></tr>`;
         
         const today = new Date();
         const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -222,7 +224,7 @@ const loadCustomers = () => {
             let displayLoanDate = new Date(0);
 
             if (!activeLoanSnapshot.empty) {
-                const activeLoanDoc = activeLoanSnapshot.docs[0]; // Asumsi hanya ada 1 pinjaman aktif
+                const activeLoanDoc = activeLoanSnapshot.docs[0];
                 const activeLoanData = activeLoanDoc.data();
                 const activeLoanId = activeLoanDoc.id;
 
@@ -230,14 +232,11 @@ const loadCustomers = () => {
                 totalPokokPinjaman = activeLoanData.pokokPinjaman;
                 totalInstallments = activeLoanData.jumlahAngsuran;
                 displayLoanDate = activeLoanData.tanggalPinjam.toDate();
-
-                // --- PERBAIKAN LOGIKA HITUNG ANGSURAN ---
-                // Hitung angsuran yang sudah dibayar HANYA untuk pinjaman yang aktif
+                
                 const paymentsForActiveLoanQuery = query(collection(db, 'transactions'), where('loanId', '==', activeLoanId), where('tipe', '==', 'Angsuran'));
                 const paymentSnapshot = await getDocs(paymentsForActiveLoanQuery);
                 paidInstallments = paymentSnapshot.size;
 
-                // --- Logika Pewarnaan ---
                 const paymentsTodayQuery = query(collection(db, 'transactions'), where('customerId', '==', customerId), where('tipe', '==', 'Angsuran'), where('tanggalTransaksi', '>=', Timestamp.fromDate(startOfToday)), where('tanggalTransaksi', '<=', Timestamp.fromDate(endOfToday)));
                 const paymentTodaySnapshot = await getDocs(paymentsTodayQuery);
 
